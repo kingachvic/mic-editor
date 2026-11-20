@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiC Scene Editor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23F5F2EA'/><path d='M3 22h8l3-4 3-14 3 22 3-8h6' fill='none' stroke='%231F4E9C' stroke-width='3' stroke-linejoin='round'/></svg>">
+<style>
+  :root { --paper:#F5F2EA; --card:#FFFDF8; --ink:#23211E; --muted:#6E6A63; --line:#DDD6C8; --blue:#1F4E9C; --red:#D2402F; --pink:#FF8FB1; --warn:#9A6B00; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 15px/1.4 Inter, system-ui, sans-serif; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 10px; cursor: pointer; touch-action: manipulation; }
+  button.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .app { display: flex; flex-direction: column; min-height: 100%; }
+  header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .logo { font-family: Lora, serif; font-size: 18px; }
+  .fname { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--card); font: inherit; width: 180px; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.ok::before { content: '● '; color: #3F8F5A; } .status.bad { color: var(--red); cursor: pointer; } .status.bad::before { content: '● '; }
+  main { display: flex; gap: 10px; padding: 10px; flex: 1; min-height: 0; }
+  .code { flex: 1 1 44%; display: flex; flex-direction: column; min-width: 0; }
+  .view { flex: 1 1 56%; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .codewrap { display: flex; flex: 1; min-height: 340px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+  .gutter { width: 42px; overflow: hidden; background: #EFEBE1; color: var(--muted); font: 13px/20px ui-monospace, Menlo, monospace; padding: 8px 0; text-align: right; user-select: none; }
+  .ln { padding-right: 8px; height: 20px; cursor: pointer; }
+  .ln.cur { background: #E4DED0; color: var(--ink); }
+  .ln.err { background: var(--red); color: #fff; } .ln.warn { box-shadow: inset 4px 0 #E2B23C; }
+  textarea { flex: 1; border: 0; outline: 0; resize: none; padding: 8px 10px; font: 13px/20px ui-monospace, Menlo, monospace; background: transparent; color: var(--ink); white-space: pre; overflow: auto; tab-size: 2; }
+  .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
+  .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
+  .stage { position: relative; width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .transport { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  .transport select { font: inherit; padding: 5px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+  .time { font-variant-numeric: tabular-nums; min-width: 96px; }
+  .timeline { display: flex; flex-direction: column; gap: 4px; }
+  .film, .lanes { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .film { height: 26px; }
+  .lanes { height: 62px; }
+  .beat { position: absolute; top: 2px; bottom: 2px; background: #E8E2D4; border-radius: 4px; font-size: 11px; padding: 3px 4px; overflow: hidden; white-space: nowrap; }
+  .beat.cur { background: #D9D1BF; font-weight: 600; } .beat.audio::after { content: ' 🎙'; }
+  .bar { position: absolute; height: 7px; background: var(--blue); border-radius: 3px; opacity: .55; margin-top: 4px; }
+  .bar.bgline { opacity: .3; } .bar.cur { opacity: 1; outline: 2px solid var(--ink); } .bar.late { background: var(--red); opacity: .9; }
+  .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--red); pointer-events: none; }
+  .inspect { font-size: 13px; color: var(--ink); min-height: 40px; }
+  .inspect code, .help code { background: #EAE4D6; border-radius: 4px; padding: 1px 4px; margin: 0 2px; cursor: pointer; font-size: 12px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; padding: 0 10px; }
+  .tabs button { border-radius: 8px 8px 0 0; text-transform: capitalize; }
+  .panel { border-top: 1px solid var(--line); padding: 8px 10px 40px; background: #FBF9F3; max-height: 42vh; overflow: auto; }
+  .row { display: flex; gap: 8px; align-items: flex-start; margin: 3px 0; }
+  .rt { width: 82px; flex: none; font-size: 12px; color: var(--muted); padding-top: 7px; text-align: right; }
+  .rw { display: flex; flex-wrap: wrap; gap: 5px; }
+  .w { padding: 5px 9px; font: 13px ui-monospace, Menlo, monospace; }
+  .w i, .sw i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; border: 1px solid #0003; vertical-align: -1px; }
+  .sw { margin-right: 10px; white-space: nowrap; }
+  .search { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; margin-bottom: 8px; background: var(--card); }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; }
+  .thumb svg { width: 100%; height: 76px; }
+  .thumb span { font: 10px ui-monospace, monospace; color: var(--muted); word-break: break-all; text-align: center; }
+  .help { max-width: 980px; } .help table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .help td { border-bottom: 1px solid var(--line); padding: 5px 6px; vertical-align: top; } .help h2 { font-family: Lora, serif; font-size: 18px; margin: 16px 0 6px; }
+  .help pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 12px; overflow: auto; }
+  .files button { margin: 4px 6px 4px 0; }
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--card); padding: 8px 14px; border-radius: 8px; font-size: 14px; }
+  @media (max-width: 900px) { main { flex-direction: column; } .codewrap { min-height: 260px; } .view { order: -1; } }
+</style>
+</head>
+<body><div id="root"></div><script src="app.js"></script></body>
+</html>
