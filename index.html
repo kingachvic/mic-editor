@@ -31,6 +31,16 @@
   .hl > div { min-height: 20px; margin: 0 -10px; padding: 0 10px; width: max-content; min-width: calc(100% + 20px); }
   .editarea textarea { width: 100%; height: 100%; border: 0; outline: 0; resize: none; background: transparent; color: transparent; overflow: auto; -webkit-text-fill-color: transparent; }
   .editarea textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; }
+  .sugg { position: absolute; z-index: 5; min-width: 220px; max-width: 460px; border-radius: 6px; padding: 3px 0; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; box-shadow: 0 6px 18px #0004; }
+  .sugg.dark { background: #252526; color: #CCCCCC; border: 1px solid #454545; } .sugg.light { background: #F3F3F3; color: #1F1F1F; border: 1px solid #C8C8C8; }
+  .si { padding: 4px 10px; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; cursor: pointer; }
+  .sugg.dark .si.sel { background: #04395E; } .sugg.light .si.sel { background: #D6EBFF; }
+  .si i { font-style: normal; font-size: 10px; width: 14px; text-align: center; border-radius: 3px; flex: none; }
+  .k-verb { color: #C586C0; } .k-when { color: #569CD6; } .k-type, .k-point { color: #DCDCAA; } .sugg.light .k-type, .sugg.light .k-point { color: #795E26; }
+  .k-object, .k-asset { color: #4EC9B0; } .k-option { color: #9CDCFE; } .sugg.light .k-option { color: #001080; } .k-value { color: #CE9178; }
+  .si small { opacity: .6; overflow: hidden; text-overflow: ellipsis; font-family: Inter, sans-serif; }
+  .transport button.play { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .transport button:disabled { opacity: .45; }
   .themebtn { margin-left: auto; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
