@@ -367,7 +367,31 @@ function makeCamera() {
 }
 
 // src/mic/parse.ts
-function tokenize(s) {
+function tokenize(src) {
+  let s = "";
+  for (let q = 0, inQ = ""; q < src.length; q++) {
+    const ch = src[q];
+    if (inQ) {
+      s += ch;
+      if (ch === inQ) inQ = "";
+      continue;
+    }
+    if (ch === '"' || ch === "\u201C") {
+      inQ = ch === '"' ? '"' : "\u201D";
+      s += ch;
+      continue;
+    }
+    if (ch === "#") {
+      s += src.slice(q);
+      break;
+    }
+    if (ch === "=") {
+      s = s.replace(/[ \t]+$/, "") + "=";
+      while (src[q + 1] === " " || src[q + 1] === "	") q++;
+      continue;
+    }
+    s += ch;
+  }
   const out = [];
   let i = 0;
   const readStr = () => {
@@ -431,6 +455,7 @@ function tokenize(s) {
       i = k;
       continue;
     }
+    if (j === i) throw new Error(`"${s[i]}" can't stand on its own here (write key=value, like to=peak)`);
     out.push({ kind: "word", text: s.slice(i, j) });
     i = j;
   }
@@ -484,6 +509,7 @@ function parseLine(n2, src) {
   if (rest[0]?.kind === "word" && rest[0].text.toLowerCase() === "repeat") {
     const k = Number(rest[1]?.text);
     if (!Number.isFinite(k) || k < 1) throw new Error('"repeat" needs a count, like: repeat 3 every=0.5s pulse dot');
+    if (k > 200) throw new Error('"repeat" goes up to 200 times');
     const every = rest.find((x) => x.kind === "kv" && x.key === "every");
     repeat = { n: Math.round(k), every: every ? dur(every.text) : 0 };
     rest = rest.slice(2).filter((x) => x !== every);
@@ -2066,6 +2092,7 @@ var TYPES = {
     make(o) {
       const kind = ionKind(o.opts.kind ?? o.text);
       const count = Math.round(n(o, "count", 12));
+      if (count > 300 || count < 0) throw new Error("count: 0 to 300 ions");
       const [aw, ah] = o.opts.area ? o.opts.area.split(",").map((x) => num(x, o.env)) : [800, 240];
       const r = prng(n(o, "seed", o.seed));
       const spots = [];
