@@ -9,3 +9,9 @@ Write Medicine in Context animations as plain-text scenes and watch them play, i
   `editor/dist/*` here.
 - Your scene is saved in the browser automatically. Download (or copy) it as a `.mic` file to keep it and to render it on Kaggle.
 - The Help tab is the full cheat sheet.
+
+## Rendering on Kaggle
+
+`render/` is the render package (the engine pre-bundled, fonts, paper, a tiny Remotion project).
+Use `render/mic-render-kaggle.ipynb`: import it into Kaggle, attach a private dataset with your `.mic` files
+(and `voice_timings.json` once you've recorded), Internet on, Save & Run All. One MP4 per beat lands in the Output tab.
