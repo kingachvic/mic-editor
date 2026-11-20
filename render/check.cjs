@@ -2060,6 +2060,43 @@ var TYPES = {
       return { draw: (h) => g(h, { x: -MEM.x0 - L / 2, y: -MEM.y }, membraneEl(h, { x1: MEM.x0 + L })), box: () => ({ cx: 0, cy: 0, w: L, h: MEM.h + 8 }) };
     }
   },
+  channel: {
+    name: "channel",
+    desc: "a working ion channel (video 2): open it, swing the Na\u207A lid shut, make it glow, all animatable with to",
+    opts: "kind=nav|kv|leak  open=0..1  lid=0..1 (nav)  glow=0..1  lidshow=0..1",
+    example: "add channel nav1 kind=nav at=0,60   \xB7   to nav1 open=1 in=0.3s   \xB7   to nav1 lid=1 in=0.4s",
+    make(o) {
+      const kind = (o.opts.kind ?? "nav").toLowerCase();
+      if (!["nav", "kv", "leak"].includes(kind)) throw new Error("kind: use nav (voltage-gated Na\u207A), kv (voltage-gated K\u207A) or leak (K\u207A leak)");
+      const open = sig(o.opts.open !== void 0 ? num(o.opts.open, o.env) : 0), lid = sig(o.opts.lid !== void 0 ? num(o.opts.lid, o.env) : 0);
+      const glow = sig(o.opts.glow !== void 0 ? num(o.opts.glow, o.env) : 0), lidshow = sig(o.opts.lidshow !== void 0 ? num(o.opts.lidshow, o.env) : 1);
+      const props = kind === "nav" ? { open, lid, glow, lidshow } : kind === "kv" ? { open } : {};
+      return {
+        props,
+        draw: (h) => g(h, { y: -MEM.y }, kind === "nav" ? navChan(h, 0, open(), lid(), lidshow(), glow()) : kind === "kv" ? kvChan(h, 0, open()) : leakChan(h, 0)),
+        box: () => ({ cx: 0, cy: 0, w: 150, h: MEM.h + 60 }),
+        points: { pore: () => [0, 0], outside: () => [0, -MEM.h / 2 - 70], inside: () => [0, MEM.h / 2 + 70] }
+      };
+    }
+  },
+  plot: {
+    name: "plot",
+    desc: "empty axes for curves (dose-response, decay, any function); add curves to it with on=",
+    opts: 'xaxis=0.01,1000  yaxis=0,100  logx  w=900  h=520  xlabel="log [drug]"  ylabel="effect (%)"  xticks=0.01,1,100  yticks=0,50,100',
+    example: 'add plot dr xaxis=0.01,1000 yaxis=0,100 logx xlabel="[agonist] (log)" ylabel="response (%)"',
+    make(o) {
+      return makePlot(o);
+    }
+  },
+  curve: {
+    name: "curve",
+    desc: "a curve on a plot, drawn on like the trace (with a halo at the pen); its numbers (ec50, emax...) can be animated with to",
+    opts: 'on=<plot>  fn=hill|line|decay|rise|points  ec50=1 emax=100 n=1 e0=0 (hill) \xB7 m= b= (line) \xB7 a= k= c= (decay/rise) \xB7 points="x,y x,y"  lw=7  dash',
+    example: "add curve agonist on=dr fn=hill ec50=1 emax=100 color=blue hidden",
+    make(o) {
+      return makeCurve(o);
+    }
+  },
   group: {
     name: "group",
     desc: "holds other objects (add them with group=<name>): move, fade or zoom them as one",
@@ -2101,6 +2138,118 @@ function makeLine(o, head) {
     },
     box: () => boundsOf(p, lw),
     points: pts2
+  };
+}
+function makePlot(o) {
+  const pr = (k, d) => o.opts[k] ? o.opts[k].split(",").map((v) => num(v, o.env)) : d;
+  const logx = o.opts.logx !== void 0;
+  const [x0, x1] = pr("xaxis", logx ? [0.01, 1e3] : [0, 10]);
+  const [y0, y1] = pr("yaxis", [0, 100]);
+  if (logx && (x0 <= 0 || x1 <= 0)) throw new Error("a log axis needs x above 0, like xaxis=0.01,1000");
+  const w = n(o, "w", 900), ht = n(o, "h", 520);
+  const fx = (x) => logx ? Math.log10(Math.max(x, 1e-12)) : x;
+  const X2 = (x) => -w / 2 + (fx(x) - fx(x0)) / (fx(x1) - fx(x0)) * w;
+  const Y2 = (y) => ht / 2 - (y - y0) / (y1 - y0) * ht;
+  const api = { X: X2, Y: Y2, x0, x1, y0, y1, logx, w, h: ht };
+  const ticks = (k) => o.opts[k] ? o.opts[k].split(",").map((v) => num(v, o.env)) : [];
+  const xt = ticks("xticks"), yt = ticks("yticks");
+  const lab = (v) => Math.abs(v) >= 1e3 || Math.abs(v) < 0.01 && v !== 0 ? v.toExponential(0).replace("e+", "e") : String(+v.toFixed(3));
+  const axes = sig(1);
+  return {
+    props: { axes },
+    draw: (h) => {
+      const a = axes();
+      if (a < 1e-3) return null;
+      return g(
+        h,
+        { op: a },
+        line(h, [[-w / 2, -ht / 2 - 20], [-w / 2, ht / 2], [w / 2 + 20, ht / 2]], { stroke: P.ink, w: 4, cap: "round", join: "round" }),
+        xt.map((v) => g(h, {}, line(h, [[X2(v), ht / 2], [X2(v), ht / 2 + 12]], { stroke: P.ink, w: 3 }), text(h, lab(v), X2(v), ht / 2 + 34, { size: 22, weight: 600, fill: P.muted, family: SANS }))),
+        yt.map((v) => g(h, {}, line(h, [[-w / 2 - 12, Y2(v)], [-w / 2, Y2(v)]], { stroke: P.ink, w: 3 }), text(h, lab(v), -w / 2 - 20, Y2(v), { size: 22, weight: 600, fill: P.muted, family: SANS, align: "r" }))),
+        o.opts.xlabel ? text(h, o.opts.xlabel, 0, ht / 2 + (xt.length ? 74 : 42), { size: 26, weight: 700, fill: P.muted, family: SANS }) : null,
+        o.opts.ylabel ? g(h, { x: -w / 2 - (yt.length ? 84 : 40), y: 0, rot: -90 }, text(h, o.opts.ylabel, 0, 0, { size: 26, weight: 700, fill: P.muted, family: SANS })) : null
+      );
+    },
+    box: () => ({ cx: 0, cy: 0, w: w + 40, h: ht + 40 }),
+    points: { origin: () => [X2(x0), Y2(y0)], "x-end": () => [X2(x1), Y2(y0)], "y-end": () => [X2(x0), Y2(y1)] },
+    pointFn: (name, arg) => name === "x" ? [X2(arg), Y2(y0)] : name === "y" ? [X2(x0), Y2(arg)] : null,
+    _plot: api
+  };
+}
+function makeCurve(o) {
+  const plot = o.parent?._plot;
+  if (!plot) throw new Error("a curve goes on a plot: add on=<plot name>, like on=dr");
+  const fn = (o.opts.fn ?? (o.opts.points ? "points" : "hill")).toLowerCase();
+  const P0 = {
+    hill: { ec50: Math.sqrt(plot.x0 * plot.x1), emax: plot.y1, n: 1, e0: plot.y0 },
+    line: { m: 1, b: 0 },
+    decay: { a: plot.y1, k: 1, c: plot.y0 },
+    rise: { a: plot.y1, k: 1, c: plot.y0 },
+    points: {}
+  };
+  if (!P0[fn]) throw new Error(`fn: use hill, line, decay, rise or points`);
+  const props = {};
+  for (const [k, d] of Object.entries(P0[fn])) props[k] = sig(o.opts[k] !== void 0 ? num(o.opts[k], o.env) : d);
+  const pts2 = o.opts.points ? monotone(points(o.opts.points, o.env)) : null;
+  const f2 = (x) => {
+    switch (fn) {
+      case "hill": {
+        const e = props.ec50(), nn = props.n();
+        return props.e0() + (props.emax() - props.e0()) * (Math.pow(x, nn) / (Math.pow(x, nn) + Math.pow(e, nn)));
+      }
+      case "line":
+        return props.m() * x + props.b();
+      case "decay":
+        return props.c() + (props.a() - props.c()) * Math.exp(-props.k() * x);
+      case "rise":
+        return props.c() + (props.a() - props.c()) * (1 - Math.exp(-props.k() * x));
+      default:
+        return pts2(x);
+    }
+  };
+  const fx = (u) => plot.logx ? Math.pow(10, Math.log10(plot.x0) + u * (Math.log10(plot.x1) - Math.log10(plot.x0))) : plot.x0 + u * (plot.x1 - plot.x0);
+  const toU = (x) => plot.logx ? (Math.log10(x) - Math.log10(plot.x0)) / (Math.log10(plot.x1) - Math.log10(plot.x0)) : (x - plot.x0) / (plot.x1 - plot.x0);
+  props.draw = sig(1);
+  props.tip = sig(0);
+  const lw = n(o, "lw", 7);
+  const dash = o.opts.dash !== void 0 ? "22 14" : void 0;
+  if (!o.opts.color) o.base.color = csig(P.volt);
+  const yc = (y) => Math.max(plot.y0 - (plot.y1 - plot.y0) * 0.05, Math.min(plot.y1 + (plot.y1 - plot.y0) * 0.05, y));
+  const at = (u) => {
+    const x = fx(u);
+    return [plot.X(x), plot.Y(yc(f2(x)))];
+  };
+  return {
+    props,
+    draw: (h) => {
+      const e = props.draw();
+      if (e <= 1e-3) return null;
+      const N = 160, P2 = [];
+      for (let i = 0; i <= N; i++) {
+        const u = i / N * e;
+        P2.push(at(u));
+      }
+      const col = o.base.color();
+      const tip = at(e);
+      return g(
+        h,
+        {},
+        strokeLine(h, P2, col, lw, 1, dash),
+        props.tip() > 1e-3 ? circle(h, tip[0], tip[1], 40, 40, { fill: rgbaHex(col.startsWith("#") ? col : P.volt, 0.25 * props.tip()) }) : null
+      );
+    },
+    box: () => {
+      const P2 = Array.from({ length: 41 }, (_, i) => at(i / 40));
+      return boundsOf(P2, lw);
+    },
+    points: {
+      start: () => at(0),
+      end: () => at(1),
+      pen: () => at(props.draw()),
+      ...fn === "hill" ? { ec50: () => [plot.X(props.ec50()), plot.Y((props.emax() + props.e0()) / 2)], top: () => at(1) } : {}
+    },
+    pointFn: (name, arg) => name === "x" || name === "t" ? [plot.X(arg), plot.Y(yc(f2(arg)))] : null,
+    _toU: toU
   };
 }
 function makeNumber(o, card) {
@@ -2161,7 +2310,7 @@ function makeObj(type, name, line_, ctx2, parent) {
     seed
   };
   if (ctx2.opts.color) base.color = csig(color(ctx2.opts.color));
-  const made = def.make({ text: ctx2.text, opts: ctx2.opts, env: ctx2.env, seed, base });
+  const made = def.make({ text: ctx2.text, opts: ctx2.opts, env: ctx2.env, seed, base, parent });
   Object.assign(base, made, { points: { ...made.points ?? {} } });
   base.props = made.props ?? {};
   if (ctx2.opts.flip !== void 0) base.flip = -1;
@@ -2417,7 +2566,7 @@ verb("clear", "Arrive and leave", "fade out everything on screen (a clean page)"
   const t = c.start;
   return Math.max(t, ...[...c.b.objs.values()].filter((o) => !o.parent && o.op.at(t) > 1e-3).map((o) => o.op.to(0, D(c, T.out), easeInCubic)(t)));
 });
-verb("draw", "Draw", "draw on a trace (to=peak, to=3.5), line, arrow or shape", "draw ap to=peak in=0.8s", (c) => each(c, (o) => (s) => {
+verb("draw", "Draw", "draw on a trace (to=peak), a curve (to=10, to=ec50; keep leaves the halo), a line, arrow or shape", "draw ap to=peak in=0.8s", (c) => each(c, (o) => (s) => {
   o.op.at(s) < 0.999 && o.op.set(1)(s);
   if (o.type === "trace") {
     const times = o._times;
@@ -2426,6 +2575,14 @@ verb("draw", "Draw", "draw on a trace (to=peak, to=3.5), line, arrow or shape", 
     const from = o.props.draw.at(s);
     if (c.line.opts.from !== void 0) o.props.draw.set(times[c.line.opts.from] ?? num(c.line.opts.from, c.b.env))(s);
     return o.props.draw.to(ms, D(c, Math.max(0.4, Math.abs(ms - from) * 0.35)), E(c, linear))(s);
+  }
+  if (o.type === "curve") {
+    const toU = o._toU;
+    const tgt = c.line.opts.to;
+    const u = tgt === void 0 || tgt === "end" ? 1 : tgt === "ec50" && o.props.ec50 ? toU(o.props.ec50.at(s)) : toU(num(tgt, c.b.env));
+    const from = o.props.draw.at(s) >= 0.999 ? 0 : o.props.draw.at(s);
+    const run = D(c, Math.max(0.5, Math.abs(u - from) * 1.6));
+    return chain(o.props.draw.set(from), o.props.tip.to(1, 0.15), o.props.draw.to(Math.max(0, Math.min(1, u)), run, E(c, easeInOutSine)), c.line.opts.keep !== void 0 ? (x) => x : o.props.tip.to(0, 0.3))(s);
   }
   if (o.props.end) return chain(o.props.end.set(0), o.props.end.to(1, D(c, 0.9), E(c, easeInOutCubic)))(s);
   throw new Error(`"draw" works on a trace, line, arrow or shape; "${o.name}" is a ${o.type} (use show or grow)`);
@@ -2598,7 +2755,7 @@ var Builder = class {
   /** apply key=value properties to an object over d seconds from s */
   setProps(o, opts, s, d, e) {
     let end = s;
-    const skip = /* @__PURE__ */ new Set(["in", "for", "ease", "as", "hidden", "show", "group", "name", "kind", "text"]);
+    const skip = /* @__PURE__ */ new Set(["in", "for", "ease", "as", "hidden", "show", "group", "on", "name", "kind", "text"]);
     const go = (sg, v) => {
       end = Math.max(end, d > 0 ? sg.to(v, d, e)(s) : sg.set(v)(s));
     };
@@ -2729,6 +2886,10 @@ function buildMic(source, timings2, o = {}) {
       if (a.kind !== "word") continue;
       if (/^(off|all|none|focus|frame|pan|zoom|reset)$/i.test(a.text) && (l.verb === "spotlight" || l.verb === "camera")) continue;
       if (/^[+\-]?\d/.test(a.text)) continue;
+      if (/^(keep)$/i.test(a.text)) {
+        l.opts[a.text.toLowerCase()] = "";
+        continue;
+      }
       if (l.verb === "label" || l.verb === "camera" || l.verb === "wait") continue;
       const ob = b.objs.get(a.text);
       if (!ob) {
@@ -2797,8 +2958,9 @@ function buildMic(source, timings2, o = {}) {
     if (!name) name = `${type}${b.objs.size + 1}`;
     if (!/^[A-Za-z_][\w-]*$/.test(name)) throw new Error(`"${name}" can't be a name: use letters, digits, - and _ (start with a letter)`);
     const txt = l.args.find((a) => a.kind === "str")?.text ?? opts.text ?? "";
-    const parent = opts.group ? b.objs.get(opts.group) ?? (() => {
-      throw new Error(`no group called "${opts.group}"`);
+    const pg = opts.group ?? opts.on;
+    const parent = pg ? b.objs.get(pg) ?? (() => {
+      throw new Error(`no ${opts.on ? "plot" : "group"} called "${pg}"`);
     })() : null;
     const ob = b.addObj(type, name, n2, txt, opts, parent);
     if (opts.fixed !== void 0) ob.fixed = true;
