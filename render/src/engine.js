@@ -632,7 +632,7 @@ function parseLine(n2, src) {
 }
 function parse(source) {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const out = { items: [], defines: {}, makes: {}, svgs: {}, errors: [] };
+  const out = { items: [], defines: {}, makes: {}, svgs: {}, images: {}, errors: [] };
   for (let i = 0; i < lines.length; i++) {
     const n2 = i + 1;
     const raw = lines[i];
@@ -705,6 +705,24 @@ function parse(source) {
         i = j;
         continue;
       }
+      if (head === "image") {
+        const t = tokenize(s);
+        const name = t[1]?.text;
+        if (!name || !/^[A-Za-z_][\w-]*$/.test(name)) throw new Error("an image needs a name, like: image bernstein w=600 h=800");
+        const kv = Object.fromEntries(t.filter((x) => x.kind === "kv").map((x) => [x.key, Number(x.text)]));
+        let j = i + 1;
+        const body = [];
+        for (; j < lines.length; j++) {
+          if (/^\s*end\s+image\s*$/i.test(lines[j])) break;
+          body.push(lines[j].trim());
+        }
+        if (j >= lines.length) throw new Error(`"image ${name}" has no "end image" line`);
+        const data = body.join("");
+        if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(data)) throw new Error(`image ${name}: the picture data is damaged (import it again)`);
+        out.images[name] = { n: n2, w: kv.w > 0 ? kv.w : 400, h: kv.h > 0 ? kv.h : 400, data };
+        i = j;
+        continue;
+      }
       if (head === "code") {
         let j = i + 1;
         const body = [];
@@ -728,6 +746,7 @@ function parse(source) {
 
 // src/paper/math.ts
 var MATH_FONT = '"Latin Modern Roman", "Latin Modern Math"';
+var NAMED = { red: P.pen, pen: P.pen, blue: P.volt, ink: P.ink, k: P.k, na: "#8A6D00", muted: P.muted };
 function group(src, i) {
   if (src[i] !== "{") throw new Error(`tex: expected { at ${i} in "${src}"`);
   let d = 0;
@@ -757,6 +776,17 @@ function parse2(src, it = false) {
       const [a, j] = group(src, i + 3);
       out.push(...parse2(a, true));
       i = j;
+    } else if (src.startsWith("\\hl", i)) {
+      flush();
+      const [a, j] = group(src, i + 3);
+      out.push({ t: "hl", a: parse2(a, it) });
+      i = j;
+    } else if (src.startsWith("\\color", i)) {
+      flush();
+      const [c, j] = group(src, i + 6);
+      const [a, k] = group(src, j);
+      out.push({ t: "col", c: NAMED[c.trim().toLowerCase()] ?? c.trim(), a: parse2(a, it) });
+      i = k;
     } else if (src.startsWith("\\log", i)) {
       buf += "log";
       i += 4;
@@ -820,6 +850,19 @@ function render(toks2, size, color2, script = false) {
     } else if (k.t === "sub" || k.t === "sup") {
       afterOrd = true;
       items.push(row(render(k.a, Math.round(size * 0.7), color2, true), { align: "end" }, { mb: k.t === "sub" ? -size * 0.24 : size * 0.42, ml: 1 }));
+    } else if (k.t === "col") {
+      items.push(...render(k.a, size, k.c, script));
+      afterOrd = true;
+    } else if (k.t === "hl") {
+      afterOrd = true;
+      const inner = row(render(k.a, size, color2, script), { align: "end" });
+      items.push({
+        w: inner.w + 8,
+        h: inner.h,
+        ml: 1,
+        mr: 1,
+        draw: (h2, cx, cy) => g(h2, {}, g(h2, { op: 0.6 }, rect(h2, cx, cy + size * 0.05, inner.w + 12, Math.min(inner.h, size * 1.15), { fill: P.hl, r: 3 })), inner.draw(h2, cx, cy))
+      });
     } else if (k.t === "frac") {
       afterOrd = true;
       const s = Math.round(size * 0.9);
@@ -1971,20 +2014,37 @@ var TYPES = {
   },
   math: {
     name: "math",
-    desc: "an equation in the LaTeX look (\\frac{a}{b}, x_{o}, x^{+}, \\it{V}, \\log)",
-    opts: '"tex"  fontsize=44',
-    takesText: true,
-    example: 'add math nernst "\\it{E} = 61.5 \\log \\frac{[K^{+}]_{o}}{[K^{+}]_{i}}"',
+    desc: "an equation in the LaTeX look (\\frac{a}{b}, x_{o}, x^{+}, \\it{V}, \\log, \\hl{x}, \\color{red}{x}); #name marks a slot you fill later",
+    opts: '"tex"  fontsize=44  <slot>="tex"',
+    example: 'add math nernst "\\it{E} = 61.5 \\log \\frac{#ko}{#ki}" ko="[K^{+}]_{o}" ki="[K^{+}]_{i}"',
     make(o) {
       const size = n(o, "fontsize", 44);
-      const v = versions(o.text);
+      const template = o.text;
+      const slotNames = [...template.matchAll(/#([A-Za-z]\w*)/g)].map((m) => m[1]);
+      const slots = {};
+      for (const k of slotNames) slots[k] = o.opts[k.toLowerCase()] ?? k;
+      const fillIn = (vals, hl = []) => template.replace(/#([A-Za-z]\w*)/g, (_, k) => hl.includes(k) ? `\\hl{${vals[k]}}` : vals[k]);
+      const v = versions(fillIn(slots));
+      const check = (c) => {
+        try {
+          tex(c, { size });
+        } catch (e) {
+          throw new Error(`maths: ${e.message.replace(/^tex: /, "")}`);
+        }
+      };
+      check(fillIn(slots));
       return {
-        swap: (c, s, d) => v.add(c, s, d),
+        swap: (c, s, d) => {
+          check(c);
+          v.add(c, s, d);
+        },
         draw: (h2) => g(h2, {}, v.now().map(([c, k]) => g(h2, { op: k }, tex(c, { size, color: o.base.color() }).draw(h2, 0, 0)))),
         box: () => {
           const it = tex(v.now().slice(-1)[0][0], { size });
           return { cx: 0, cy: 0, w: it.w, h: it.h };
-        }
+        },
+        _slots: slots,
+        _fill: fillIn
       };
     }
   },
@@ -2241,6 +2301,37 @@ var TYPES = {
       return {
         draw: (h2) => h2("g", { transform: `scale(${k}) translate(${-vx - vw / 2} ${-vy - vh / 2})`, dangerouslySetInnerHTML: { __html: art.inner } }),
         box: () => ({ cx: 0, cy: 0, w: vw * k, h: vh * k })
+      };
+    }
+  },
+  image: {
+    name: "image",
+    desc: "a photo or picture you imported (My assets tab); add it by its name: add bernstein p1",
+    opts: "tone=warm|grey  frame (taped card, like video 1 portraits)  native",
+    example: "add bernstein p1 tone=warm frame at=-500,0",
+    make(o) {
+      const data = o.opts.__img ?? "";
+      const iw = Number(o.opts.__w) || 400, ih = Number(o.opts.__h) || 400;
+      const k = o.opts.native !== void 0 ? 1 : 400 / Math.max(iw, ih);
+      const W = iw * k, Ht = ih * k;
+      const tone = (o.opts.tone ?? "").toLowerCase();
+      const filter = tone === "warm" ? "grayscale(1) sepia(0.45) contrast(1.05) brightness(1.02)" : tone === "grey" || tone === "gray" ? "grayscale(1)" : void 0;
+      const framed = o.opts.frame !== void 0;
+      const tr = prng(o.seed + 7);
+      const tp = [];
+      for (let i = 0; i <= 6; i++) tp.push([-46 + (tr() - 0.5) * 6, -13 + i * 26 / 6]);
+      for (let i = 0; i <= 6; i++) tp.push([46 + (tr() - 0.5) * 6, 13 - i * 26 / 6]);
+      const card = framed ? tornPoints(W + 44, Ht + 44, o.seed, "b") : null;
+      return {
+        draw: (h2) => g(
+          h2,
+          {},
+          card ? line(h2, card, { closed: true, fill: P.card, shadow: true }) : null,
+          h2("image", { href: data, x: -W / 2, y: -Ht / 2, width: W, height: Ht, preserveAspectRatio: "xMidYMid slice", style: filter ? { filter } : void 0 }),
+          framed ? rect(h2, 0, 0, W, Ht, { stroke: P.ink, lw: 2 }) : null,
+          framed ? g(h2, { x: -W / 2 + 26, y: -Ht / 2 - 18, rot: -32 }, line(h2, tp, { closed: true, fill: P.tape, op: 0.8 })) : null
+        ),
+        box: () => ({ cx: 0, cy: 0, w: W + (framed ? 44 : 0), h: Ht + (framed ? 44 : 0) })
       };
     }
   },
@@ -2885,6 +2976,24 @@ verb("swap", "Change", 'crossfade text, maths or a card to new words: swap q "ne
   o.swap(words, s, d);
   return s + d;
 }));
+verb("fill", "Change", "drop values into a maths slot, highlighted as they land: fill eq ko=4 ki=140", "fill nernst ko=4 ki=140", (c) => each(c, (o) => (s) => {
+  const slots = o._slots, fillIn = o._fill;
+  if (!slots || !o.swap) throw new Error(`"fill" works on maths with #slots; "${o.name}" is a ${o.type}`);
+  const keys = Object.keys(slots), vals = { ...slots }, changed = [];
+  for (const [k, v] of Object.entries(c.line.opts)) {
+    if (["in", "ease", "hold", "for"].includes(k)) continue;
+    const real = keys.find((x) => x.toLowerCase() === k);
+    if (!real) throw new Error(`"${o.name}" has no slot "${k}". Its slots: ${keys.join(", ") || "none (mark them with #name)"}`);
+    vals[real] = v;
+    changed.push(real);
+  }
+  if (!changed.length) throw new Error("fill needs slot=value, like: fill nernst ko=4");
+  const d = D(c, 0.4), hold = c.line.opts.hold !== void 0 ? dur(c.line.opts.hold) : 0.8;
+  o.swap(fillIn(vals, changed), s, d);
+  o.swap(fillIn(vals), s + d + hold, 0.5);
+  Object.assign(slots, vals);
+  return s + d + hold + 0.5;
+}));
 verb("travel", "Motion", 'move along points: travel n1 via="0,-100 0,100" to=0,240 in=1.5s', "travel n1 via=pore.top to=pore.bottom in=1.2s", (c) => each(c, (o) => (s) => {
   const t = s;
   const pts2 = [...c.line.opts.via ? points(c.line.opts.via, c.b.env) : [], ...c.line.opts.to ? [point(c.line.opts.to, c.b.env)] : [], ...c.line.opts.along ? points(c.line.opts.along, c.b.env) : []];
@@ -3034,6 +3143,7 @@ function buildMic(source, timings, o = {}) {
   const defines = { ...lib?.defines ?? {}, ...parsed.defines };
   const makes = { ...lib?.makes ?? {}, ...parsed.makes };
   const svgs = { ...lib?.svgs ?? {}, ...parsed.svgs };
+  const images = { ...lib?.images ?? {}, ...parsed.images };
   const errors = [...parsed.errors];
   for (const e of lib?.errors ?? []) errors.push({ line: 0, msg: `library line ${e.line}: ${e.msg}` });
   const warnings = [];
@@ -3246,15 +3356,23 @@ function buildMic(source, timings, o = {}) {
     let type = (words[0] ?? "").toLowerCase();
     let name = words[1];
     const opts = { ...l.opts };
+    const asImage = (nm) => {
+      const im = images[nm];
+      opts.__img = im.data;
+      opts.__w = String(im.w);
+      opts.__h = String(im.h);
+      type = "image";
+    };
     if (type === "asset" && opts.name && svgs[opts.name]) {
       type = "svg";
       opts.__svg = svgs[opts.name].text;
       opts.__name = opts.name;
-    }
-    if (!TYPES[type] || type === "svg" && !opts.__svg) {
+    } else if ((type === "asset" || type === "image") && opts.name && images[opts.name]) asImage(opts.name);
+    if (!TYPES[type] || type === "svg" && !opts.__svg || type === "image" && !opts.__img) {
       const mk = makes[words[0]];
       if (mk) return doMake(mk, l, s, n2, words, opts, mctx);
-      if (svgs[words[0]]) {
+      if (images[words[0]]) asImage(words[0]);
+      else if (svgs[words[0]]) {
         opts.__svg = svgs[words[0]].text;
         opts.__name = words[0];
         type = "svg";
@@ -3262,7 +3380,7 @@ function buildMic(source, timings, o = {}) {
         opts.name = words[0];
         type = "asset";
       } else {
-        const near = closest(type, [...Object.keys(TYPES), ...ASSET_NAMES, ...Object.keys(makes), ...Object.keys(svgs)]);
+        const near = closest(type, [...Object.keys(TYPES), ...ASSET_NAMES, ...Object.keys(makes), ...Object.keys(svgs), ...Object.keys(images)]);
         throw new Error(`"${words[0] ?? ""}" isn't a type of object${near ? `. Did you mean ${near}?` : ""}. Types: ${Object.keys(TYPES).join(", ")}`);
       }
     }
@@ -3335,7 +3453,7 @@ function buildMic(source, timings, o = {}) {
       } else if (it.kind === "let") {
         b.vars[it.name] = num(it.expr, b.env);
       } else if (it.kind === "code") {
-        warnings.push({ line: it.n, msg: "code blocks are skipped in the editor preview (they run in the full render only)" });
+        warnings.push({ line: it.n, msg: "code blocks are not supported (yet): this block is skipped in the preview and in the render. Ask for a new verb or object type instead." });
       } else {
         runLine(it.line, it.line.n);
       }
@@ -3382,7 +3500,7 @@ function buildMic(source, timings, o = {}) {
     hit,
     seconds,
     makes: Object.keys(makes),
-    svgs: Object.keys(svgs)
+    svgs: [...Object.keys(svgs), ...Object.keys(images)]
   };
 }
 function micBeatScenes(r, prefix = "mic") {
