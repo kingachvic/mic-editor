@@ -1,6 +1,6 @@
 // MiC Scene Editor offline cache. The page and its code: network first (always the newest when online, the saved
 // copy when offline). Fonts, paper and icons: from the cache (they never change). VERSION is set by editor/build.sh.
-const VERSION = '20261120222841';
+const VERSION = '20261120223516';
 const CACHE = `mic-editor-${VERSION}`;
 const SHELL = ['./', 'index.html', 'app.js', 'paper.jpg', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'fonts/Inter-Regular.woff', 'fonts/Inter-SemiBold.woff', 'fonts/Inter-Bold.woff', 'fonts/Inter-ExtraBold.woff',
