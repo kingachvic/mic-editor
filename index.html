@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MiC Scene Editor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F5F2EA">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23F5F2EA'/><path d='M3 22h8l3-4 3-14 3 22 3-8h6' fill='none' stroke='%231F4E9C' stroke-width='3' stroke-linejoin='round'/></svg>">
 <style>
   :root { --paper:#F5F2EA; --card:#FFFDF8; --ink:#23211E; --muted:#6E6A63; --line:#DDD6C8; --blue:#1F4E9C; --red:#D2402F; --pink:#FF8FB1; --warn:#9A6B00; }
@@ -14,6 +17,7 @@
   .app { display: flex; flex-direction: column; min-height: 100%; }
   header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .logo { font-family: Lora, serif; font-size: 18px; }
+  header .status:last-of-type { margin-right: auto; }
   .fname { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--card); font: inherit; width: 180px; }
   .status { font-size: 13px; color: var(--muted); }
   .status.ok::before { content: '● '; color: #3F8F5A; } .status.bad { color: var(--red); cursor: pointer; } .status.bad::before { content: '● '; }
@@ -51,7 +55,7 @@
   .ghform { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 12px; margin: 6px 0 8px; font-size: 13px; }
   .ghform label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
   .ghform input { font: 13px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
-  .themebtn { margin-left: auto; font-size: 13px; padding: 4px 10px; }
+  .themebtn { margin-left: 6px; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
   .stage { position: relative; width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
