@@ -14,7 +14,7 @@
   html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 15px/1.4 Inter, system-ui, sans-serif; }
   button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 10px; cursor: pointer; touch-action: manipulation; }
   button.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
-  .app { display: flex; flex-direction: column; min-height: 100%; }
+  .app { display: flex; flex-direction: column; min-height: 100%; overflow-x: hidden; }
   header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .logo { font-family: Lora, serif; font-size: 18px; }
   header .status:last-of-type { margin-right: auto; }
@@ -63,7 +63,7 @@
   .transport select { font: inherit; padding: 5px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
   .time { font-variant-numeric: tabular-nums; min-width: 96px; }
   .timeline { display: flex; flex-direction: column; gap: 4px; }
-  .film, .lanes { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .film, .lanes { position: relative; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .film { height: 26px; }
   .lanes { height: 62px; }
   .beat { position: absolute; top: 2px; bottom: 2px; background: #E8E2D4; border-radius: 4px; font-size: 11px; padding: 3px 4px; overflow: hidden; white-space: nowrap; }
