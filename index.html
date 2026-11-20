@@ -20,12 +20,18 @@
   main { display: flex; gap: 10px; padding: 10px; flex: 1; min-height: 0; }
   .code { flex: 1 1 44%; display: flex; flex-direction: column; min-width: 0; }
   .view { flex: 1 1 56%; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .codewrap { display: flex; flex: 1; min-height: 340px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
-  .gutter { width: 42px; overflow: hidden; background: #EFEBE1; color: var(--muted); font: 13px/20px ui-monospace, Menlo, monospace; padding: 8px 0; text-align: right; user-select: none; }
+  .codewrap { display: flex; flex: 1; min-height: 340px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .gutter { width: 42px; flex: none; overflow: hidden; font: 13px/20px ui-monospace, Menlo, monospace; padding: 8px 0; text-align: right; user-select: none; }
   .ln { padding-right: 8px; height: 20px; cursor: pointer; }
   .ln.cur { background: #E4DED0; color: var(--ink); }
   .ln.err { background: var(--red); color: #fff; } .ln.warn { box-shadow: inset 4px 0 #E2B23C; }
-  textarea { flex: 1; border: 0; outline: 0; resize: none; padding: 8px 10px; font: 13px/20px ui-monospace, Menlo, monospace; background: transparent; color: var(--ink); white-space: pre; overflow: auto; tab-size: 2; }
+  .editarea { position: relative; flex: 1; min-width: 0; }
+  .hl, .editarea textarea { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font: 13px/20px ui-monospace, Menlo, Consolas, monospace; white-space: pre; tab-size: 2; letter-spacing: 0; font-variant-ligatures: none; }
+  .hl { overflow: hidden; pointer-events: none; }
+  .hl > div { min-height: 20px; margin: 0 -10px; padding: 0 10px; width: max-content; min-width: calc(100% + 20px); }
+  .editarea textarea { width: 100%; height: 100%; border: 0; outline: 0; resize: none; background: transparent; color: transparent; overflow: auto; -webkit-text-fill-color: transparent; }
+  .editarea textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; }
+  .themebtn { margin-left: auto; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
   .stage { position: relative; width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
