@@ -16,7 +16,9 @@ var lastEnd = 0;
 function sig(init) {
   const segs = [];
   let sorted = true;
+  let over = null;
   const at = (t) => {
+    if (over) return over(t);
     if (!sorted) {
       segs.sort((a, b) => a.s - b.s || a.n - b.n);
       sorted = true;
@@ -42,6 +44,9 @@ function sig(init) {
   f2.at = at;
   f2.to = (v, d = 0.6, e = easeInOutCubic) => add(v, d, e);
   f2.set = (v) => add(v, 0, linear);
+  f2.follow = (fn) => {
+    over = fn;
+  };
   return f2;
 }
 var all = (...as) => (s) => Math.max(s, ...as.map((a) => a(s)));
@@ -502,7 +507,7 @@ function parseLine(n2, src) {
 }
 function parse(source) {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const out = { items: [], defines: {}, errors: [] };
+  const out = { items: [], defines: {}, makes: {}, svgs: {}, errors: [] };
   for (let i = 0; i < lines.length; i++) {
     const n2 = i + 1;
     const raw = lines[i];
@@ -536,6 +541,42 @@ function parse(source) {
         }
         if (j >= lines.length) throw new Error(`"define ${name}" has no "end" line`);
         out.defines[name] = { name, params: t.slice(2).map((x) => x.text), body };
+        i = j;
+        continue;
+      }
+      if (head === "make") {
+        const t = tokenize(s);
+        const name = t[1]?.text;
+        if (!name || t[1].kind !== "word" || !/^[A-Za-z_][\w-]*$/.test(name)) throw new Error("a make needs a name, like: make heart squeeze=0");
+        const params = {};
+        for (const x of t.slice(2)) {
+          if (x.kind === "kv") params[x.key] = x.text;
+          else if (x.kind === "word") params[x.text.toLowerCase()] = "0";
+        }
+        const body = [];
+        let j = i + 1;
+        for (; j < lines.length; j++) {
+          const b = lines[j].trim();
+          if (/^end(\s+make)?$/i.test(b)) break;
+          if (b && !b.startsWith("#")) body.push({ n: j + 1, src: b });
+        }
+        if (j >= lines.length) throw new Error(`"make ${name}" has no "end" line`);
+        out.makes[name] = { name, n: n2, params, body };
+        i = j;
+        continue;
+      }
+      if (head === "svg") {
+        const t = tokenize(s);
+        const name = t[1]?.text;
+        if (!name || !/^[A-Za-z_][\w-]*$/.test(name)) throw new Error("an svg needs a name, like: svg kidney");
+        let j = i + 1;
+        const body = [];
+        for (; j < lines.length; j++) {
+          if (/^\s*end\s+svg\s*$/i.test(lines[j])) break;
+          body.push(lines[j]);
+        }
+        if (j >= lines.length) throw new Error(`"svg ${name}" has no "end svg" line`);
+        out.svgs[name] = { n: n2, text: body.join("\n") };
         i = j;
         continue;
       }
@@ -1936,20 +1977,21 @@ var TYPES = {
   shape: {
     name: "shape",
     desc: "a circle, rectangle, ellipse or any SVG path; draw it on with: draw",
-    opts: 'kind=circle|rect|ellipse|path  w=  h=  r=  path="M0 0 L100 0"  fill=  lw=4  dash=',
+    opts: 'kind=circle|rect|ellipse|path  w=  h=  r=  path="M0 0 L100 0"  fill=  stroke=  lw=4  round=10',
     example: "add shape pore kind=rect w=60 h=180 fill=protein",
     make(o) {
       const kind = (o.opts.kind ?? (o.opts.path ? "path" : "circle")).toLowerCase();
-      const w = n(o, "w", n(o, "r", 60) * 2), ht = n(o, "h", kind === "circle" ? w : n(o, "r", 60) * 2);
+      const w0 = n(o, "w", n(o, "r", 60) * 2), h0 = n(o, "h", kind === "circle" ? w0 : n(o, "r", 60) * 2);
+      const W = sig(w0), Hh = sig(h0);
       const fill = o.opts.fill ? color(o.opts.fill) : "none";
       const lw = n(o, "lw", o.opts.fill && !o.opts.color ? 3 : 4);
       const end = sig(1);
       const strokeC = () => o.opts.stroke === "none" ? "none" : o.base.color();
       if (o.opts.stroke && o.opts.stroke !== "none") o.base.color = csig(color(o.opts.stroke));
       return {
-        props: { end },
+        props: { end, w: W, h: Hh },
         draw: (h) => {
-          const e = end();
+          const e = end(), w = Math.max(0, W()), ht = Math.max(0, Hh());
           if (kind === "path") return path(h, o.opts.path, { fill, stroke: strokeC(), lw, cap: "round", join: "round" });
           if (e < 0.999) {
             const P2 = [];
@@ -1962,10 +2004,11 @@ var TYPES = {
             }
             return strokeLine(h, P2, strokeC(), lw, e);
           }
-          if (kind === "rect") return rect(h, 0, 0, w, ht, { r: n(o, "round", 10), fill, stroke: strokeC(), lw });
+          if (w < 0.5 || ht < 0.5) return null;
+          if (kind === "rect") return rect(h, 0, 0, w, ht, { r: Math.min(n(o, "round", 10), w / 2, ht / 2), fill, stroke: strokeC(), lw });
           return circle(h, 0, 0, w, ht, { fill, stroke: strokeC(), lw });
         },
-        box: () => ({ cx: 0, cy: 0, w, h: ht })
+        box: () => ({ cx: 0, cy: 0, w: W(), h: Hh() })
       };
     }
   },
@@ -2060,6 +2103,21 @@ var TYPES = {
       return { draw: (h) => g(h, { x: -MEM.x0 - L / 2, y: -MEM.y }, membraneEl(h, { x1: MEM.x0 + L })), box: () => ({ cx: 0, cy: 0, w: L, h: MEM.h + 8 }) };
     }
   },
+  svg: {
+    name: "svg",
+    desc: "a drawing you imported (Library tab); add it by its name: add kidney k1",
+    opts: "native (keep its own size instead of 400 px)",
+    example: "add kidney k1 at=300,0 size=0.8",
+    make(o) {
+      const art = svgArt(o.opts.__name ?? "svg", o.opts.__svg ?? "");
+      const k = o.opts.native !== void 0 ? 1 : art.k;
+      const [vx, vy, vw, vh] = art.vb;
+      return {
+        draw: (h) => h("g", { transform: `scale(${k}) translate(${-vx - vw / 2} ${-vy - vh / 2})`, dangerouslySetInnerHTML: { __html: art.inner } }),
+        box: () => ({ cx: 0, cy: 0, w: vw * k, h: vh * k })
+      };
+    }
+  },
   channel: {
     name: "channel",
     desc: "a working ion channel (video 2): open it, swing the Na\u207A lid shut, make it glow, all animatable with to",
@@ -2139,6 +2197,37 @@ function makeLine(o, head) {
     box: () => boundsOf(p, lw),
     points: pts2
   };
+}
+var svgCache = /* @__PURE__ */ new Map();
+function svgArt(name, text2) {
+  const key = name + "\0" + text2;
+  const hit = svgCache.get(key);
+  if (hit) return hit;
+  const open = /<svg\b[^>]*>/i.exec(text2);
+  const close = text2.toLowerCase().lastIndexOf("</svg>");
+  if (!open || close < 0) throw new Error(`svg ${name}: this isn't an SVG drawing (no <svg> ... </svg>)`);
+  const head = open[0];
+  const num_ = (a) => {
+    const m = new RegExp(`\\b${a}\\s*=\\s*["']\\s*([\\d.]+)`, "i").exec(head);
+    return m ? parseFloat(m[1]) : NaN;
+  };
+  const vbm = /viewBox\s*=\s*["']([^"']+)["']/i.exec(head);
+  let vb;
+  if (vbm) vb = vbm[1].trim().split(/[\s,]+/).map(Number);
+  else {
+    const w = num_("width"), h = num_("height");
+    if (!(w > 0 && h > 0)) throw new Error(`svg ${name}: it has no viewBox or size`);
+    vb = [0, 0, w, h];
+  }
+  let inner = text2.slice(open.index + head.length, close);
+  inner = inner.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "").replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi, "").replace(/(xlink:)?href\s*=\s*["'](?!#|data:image\/)[^"']*["']/gi, "").replace(/<\?xml[^>]*>|<!DOCTYPE[^>]*>|<!--[\s\S]*?-->/gi, "");
+  const pre = `mic-${name}-`;
+  inner = inner.replace(/\bid\s*=\s*"([^"]+)"/g, (_, i) => `id="${pre}${i}"`).replace(/\bid\s*=\s*'([^']+)'/g, (_, i) => `id='${pre}${i}'`).replace(/url\(\s*#([^)\s]+)\s*\)/g, (_, i) => `url(#${pre}${i})`).replace(/href\s*=\s*"#([^"]+)"/g, (_, i) => `href="#${pre}${i}"`);
+  inner = inner.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => `<style>${css.replace(/@import[^;]*;/g, "").replace(/url\((?!\s*#|\s*data:)[^)]*\)/g, "none")}</style>`);
+  const k = 400 / Math.max(vb[2], vb[3]);
+  const art = { inner, vb, k };
+  svgCache.set(key, art);
+  return art;
 }
 function makePlot(o) {
   const pr = (k, d) => o.opts[k] ? o.opts[k].split(",").map((v) => num(v, o.env)) : d;
@@ -2817,7 +2906,10 @@ function buildMic(source, timings2, o = {}) {
   const lib2 = o.library ? parse(o.library) : null;
   const parsed = parse(source);
   const defines = { ...lib2?.defines ?? {}, ...parsed.defines };
+  const makes = { ...lib2?.makes ?? {}, ...parsed.makes };
+  const svgs = { ...lib2?.svgs ?? {}, ...parsed.svgs };
   const errors = [...parsed.errors];
+  for (const e of lib2?.errors ?? []) errors.push({ line: 0, msg: `library line ${e.line}: ${e.msg}` });
   const warnings = [];
   const b = new Builder();
   const beatHeads = parsed.items.filter((i) => i.kind === "beat").map((i) => i.beat);
@@ -2891,7 +2983,11 @@ function buildMic(source, timings2, o = {}) {
         continue;
       }
       if (l.verb === "label" || l.verb === "camera" || l.verb === "wait") continue;
-      const ob = b.objs.get(a.text);
+      let ob = b.objs.get(a.text);
+      if (!ob && a.text.includes(".")) {
+        const [i0, c0] = a.text.split(".");
+        ob = b.objs.get(`${i0}__${c0}`);
+      }
       if (!ob) {
         const near = closest(a.text, [...b.objs.keys()]);
         throw new Error(`no object called "${a.text}"${near ? `. Did you mean ${near}?` : ""}`);
@@ -2939,17 +3035,108 @@ function buildMic(source, timings2, o = {}) {
     }
     return v.run({ line: l, targets: targetsOf(l), start: s, b });
   };
-  const doAdd = (l, s, n2) => {
+  const follow = (target, expr, ctx2) => {
+    const val = (t) => {
+      const saved = {};
+      for (const [k, sg] of Object.entries(ctx2.params)) {
+        saved[k] = b.vars[k];
+        b.vars[k] = sg.at(t);
+      }
+      try {
+        return num(expr, b.env);
+      } finally {
+        for (const [k, v] of Object.entries(saved)) {
+          if (v === void 0) delete b.vars[k];
+          else b.vars[k] = v;
+        }
+      }
+    };
+    target.follow(val);
+  };
+  const usesParam = (v, ctx2) => !!ctx2 && Object.keys(ctx2.params).some((p) => new RegExp(`(^|[^\\w.])${p}($|[^\\w])`).test(v));
+  const splitPair = (v) => {
+    let d = 0;
+    for (let i = 0; i < v.length; i++) {
+      if (v[i] === "(") d++;
+      else if (v[i] === ")") d--;
+      else if (v[i] === "," && !d) return [v.slice(0, i), v.slice(i + 1)];
+    }
+    return null;
+  };
+  const doMake = (mk, l, s, n2, words, opts, mctx) => {
+    let name = words[1] ?? `${mk.name}${b.objs.size + 1}`;
+    if (!/^[A-Za-z_][\w-]*$/.test(name)) throw new Error(`"${name}" can't be a name`);
+    if (mctx) name = mctx.prefix + name;
+    const parent = mctx ? mctx.parent : opts.group ? b.objs.get(opts.group) ?? null : null;
+    const inst = b.addObj("group", name, n2, "", {}, parent);
+    inst.type = mk.name;
+    const params = {};
+    for (const [k, d] of Object.entries(mk.params)) params[k] = sig(opts[k] !== void 0 ? num(opts[k], b.env) : num(d, b.env));
+    inst.props = params;
+    const ctx2 = { parent: inst, prefix: `${name}__`, params };
+    const kids = [];
+    for (const bl of mk.body) {
+      const inner = parseLine(bl.n, bl.src);
+      if (!inner) continue;
+      if (inner.verb !== "add") throw new Error(`inside make ${mk.name} (line ${bl.n}) only "add" lines work`);
+      try {
+        doAdd(inner, 0, bl.n, ctx2);
+      } catch (e) {
+        throw new Error(`make ${mk.name}, line ${bl.n}: ${e.message}`);
+      }
+      const cw = inner.args.filter((a) => a.kind === "word")[1]?.text;
+      if (cw && b.objs.get(ctx2.prefix + cw)) kids.push([cw, b.objs.get(ctx2.prefix + cw)]);
+    }
+    for (const [cw, c] of kids) inst.points[cw] = () => [c.x(), c.y()];
+    inst.box = () => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const c of inst.children) {
+        const bx = c.box(), k = c.s.at(0), cx = c.x.at(0) + bx.cx * k, cy = c.y.at(0) + bx.cy * k;
+        x0 = Math.min(x0, cx - bx.w * k / 2);
+        x1 = Math.max(x1, cx + bx.w * k / 2);
+        y0 = Math.min(y0, cy - bx.h * k / 2);
+        y1 = Math.max(y1, cy + bx.h * k / 2);
+      }
+      return isFinite(x0) ? { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 } : { cx: 0, cy: 0, w: 0, h: 0 };
+    };
+    for (const k of ["centre", "center", "left", "right", "top", "bottom"]) {
+      const bx = () => inst.box();
+      inst.points[k] = k === "left" ? () => [bx().cx - bx().w / 2, bx().cy] : k === "right" ? () => [bx().cx + bx().w / 2, bx().cy] : k === "top" ? () => [bx().cx, bx().cy - bx().h / 2] : k === "bottom" ? () => [bx().cx, bx().cy + bx().h / 2] : () => [bx().cx, bx().cy];
+    }
+    const startOpts = {};
+    for (const k of ["at", "x", "y", "size", "scale", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
+    b.t = s;
+    b.setProps(inst, startOpts, 0, 0, linear);
+    if (words.slice(2).some((w) => /^hidden$/i.test(w)) || opts.hidden !== void 0) return s;
+    const how = (opts.show ?? "none").toLowerCase();
+    if (how === "none") {
+      inst.op.set(1)(s);
+      return s;
+    }
+    return appear(inst, how, { line: { ...l, opts: opts.in ? { in: opts.in } : {} }, targets: [inst], start: s, b })(s);
+  };
+  const doAdd = (l, s, n2, mctx) => {
     const words = l.args.filter((a) => a.kind === "word").map((a) => a.text);
     let type = (words[0] ?? "").toLowerCase();
     let name = words[1];
     const opts = { ...l.opts };
-    if (!TYPES[type]) {
-      if (ASSET_NAMES.includes(words[0])) {
+    if (type === "asset" && opts.name && svgs[opts.name]) {
+      type = "svg";
+      opts.__svg = svgs[opts.name].text;
+      opts.__name = opts.name;
+    }
+    if (!TYPES[type] || type === "svg" && !opts.__svg) {
+      const mk = makes[words[0]];
+      if (mk) return doMake(mk, l, s, n2, words, opts, mctx);
+      if (svgs[words[0]]) {
+        opts.__svg = svgs[words[0]].text;
+        opts.__name = words[0];
+        type = "svg";
+      } else if (ASSET_NAMES.includes(words[0])) {
         opts.name = words[0];
         type = "asset";
       } else {
-        const near = closest(type, [...Object.keys(TYPES), ...ASSET_NAMES]);
+        const near = closest(type, [...Object.keys(TYPES), ...ASSET_NAMES, ...Object.keys(makes), ...Object.keys(svgs)]);
         throw new Error(`"${words[0] ?? ""}" isn't a type of object${near ? `. Did you mean ${near}?` : ""}. Types: ${Object.keys(TYPES).join(", ")}`);
       }
     }
@@ -2959,10 +3146,42 @@ function buildMic(source, timings2, o = {}) {
     if (!/^[A-Za-z_][\w-]*$/.test(name)) throw new Error(`"${name}" can't be a name: use letters, digits, - and _ (start with a letter)`);
     const txt = l.args.find((a) => a.kind === "str")?.text ?? opts.text ?? "";
     const pg = opts.group ?? opts.on;
-    const parent = pg ? b.objs.get(pg) ?? (() => {
+    const pgName = pg && mctx ? mctx.prefix + pg : pg;
+    const parent = pg ? b.objs.get(pgName) ?? (() => {
       throw new Error(`no ${opts.on ? "plot" : "group"} called "${pg}"`);
-    })() : null;
-    const ob = b.addObj(type, name, n2, txt, opts, parent);
+    })() : mctx ? mctx.parent : null;
+    if (mctx) name = mctx.prefix + name;
+    const bound = [];
+    if (mctx) {
+      for (const [k, v] of Object.entries(opts)) if (usesParam(v, mctx)) bound.push([k, v]);
+      for (const [k, sg] of Object.entries(mctx.params)) b.vars[k] = sg.at(0);
+    }
+    let ob;
+    try {
+      ob = b.addObj(type, name, n2, txt, opts, parent);
+    } finally {
+      if (mctx) for (const k of Object.keys(mctx.params)) delete b.vars[k];
+    }
+    for (const [k, v] of bound) {
+      const base = { x: "x", y: "y", size: "s", scale: "s", rotate: "rot", tilt: "rot", rot: "rot", opacity: "op" };
+      if (k === "at") {
+        const pr = splitPair(v);
+        if (!pr) throw new Error(`at=${v}: write it as x,y`);
+        follow(ob.x, pr[0], mctx);
+        follow(ob.y, pr[1], mctx);
+        delete opts.at;
+      } else if (base[k]) {
+        follow(ob[base[k]], v, mctx);
+        delete opts[k];
+      } else if (k === "r" && ob.props.w) {
+        follow(ob.props.w, `2*(${v})`, mctx);
+        follow(ob.props.h, `2*(${v})`, mctx);
+      } else if (ob.props[k]) follow(ob.props[k], v, mctx);
+      else throw new Error(`"${k}" can't follow the make's numbers`);
+    }
+    if (bound.some(([k]) => k === "opacity")) {
+      delete opts.opacity;
+    }
     if (opts.fixed !== void 0) ob.fixed = true;
     const startOpts = {};
     for (const k of ["at", "x", "y", "size", "scale", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
@@ -2970,7 +3189,7 @@ function buildMic(source, timings2, o = {}) {
     b.setProps(ob, startOpts, 0, 0, linear);
     if (opts.layer !== void 0) ob.layer = num(opts.layer, b.env);
     const hidden = opts.hidden !== void 0 && opts.hidden !== "no";
-    if (hidden) return s;
+    if (hidden || bound.some(([k]) => k === "opacity")) return s;
     const how = (opts.show ?? "none").toLowerCase();
     const vis = opts.opacity !== void 0 ? num(opts.opacity, b.env) : 1;
     if (how === "none") {
@@ -3035,7 +3254,9 @@ function buildMic(source, timings2, o = {}) {
     objects: [...b.objs.values()].map((x) => ({ name: x.name, type: x.type, line: x.line })),
     objectsByName: b.objs,
     hit,
-    seconds
+    seconds,
+    makes: Object.keys(makes),
+    svgs: Object.keys(svgs)
   };
 }
 function micBeatScenes(r, prefix = "mic") {
