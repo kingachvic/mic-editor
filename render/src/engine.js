@@ -1,8 +1,8 @@
 // src/paper/assets.ts
 var IMAGES = ["portraits/bernstein.jpg", "portraits/skou.jpg"];
 var URL_OF = (p) => p;
-function setAssetUrl(f2) {
-  URL_OF = f2;
+function setAssetUrl(f3) {
+  URL_OF = f3;
 }
 function preloadImages(url) {
   return Promise.all(IMAGES.map((p) => new Promise((res) => {
@@ -48,8 +48,20 @@ function sig(init) {
   const segs = [];
   let sorted = true;
   let over = null;
+  const windows = [];
   const at = (t) => {
     if (over) return over(t);
+    if (windows.length) {
+      for (const w of windows) if (t >= w.t0 && t <= w.t1) {
+        const base = atBase(t);
+        const k = Math.min(1, (t - w.t0) / w.b, (w.t1 - t) / w.b);
+        const e = k >= 1 ? 1 : k * k * (3 - 2 * k);
+        return base + (w.fn(t) - base) * e;
+      }
+    }
+    return atBase(t);
+  };
+  const atBase = (t) => {
     if (!sorted) {
       segs.sort((a, b) => a.s - b.s || a.n - b.n);
       sorted = true;
@@ -71,14 +83,18 @@ function sig(init) {
     lastEnd = Math.max(lastEnd, s + d);
     return s + Math.max(0, d);
   };
-  const f2 = (() => at(NOW));
-  f2.at = at;
-  f2.to = (v, d = 0.6, e = easeInOutCubic) => add(v, d, e);
-  f2.set = (v) => add(v, 0, linear);
-  f2.follow = (fn) => {
+  const f3 = (() => at(NOW));
+  f3.at = at;
+  f3.to = (v, d = 0.6, e = easeInOutCubic) => add(v, d, e);
+  f3.set = (v) => add(v, 0, linear);
+  f3.follow = (fn) => {
     over = fn;
   };
-  return f2;
+  f3.followDuring = (fn, t0, t1, b = 0.6) => {
+    windows.push({ fn, t0, t1, b: Math.max(0.01, b) });
+    lastEnd = Math.max(lastEnd, t1 === Infinity ? t0 : t1);
+  };
+  return f3;
 }
 var all = (...as) => (s) => Math.max(s, ...as.map((a) => a(s)));
 var chain = (...as) => (s) => as.reduce((c, a) => a(c), s);
@@ -225,8 +241,8 @@ function loadFonts(url) {
   return Promise.all([
     preloadImages(url),
     ...FONT_FILES.map(
-      ([file, family, weight, style]) => new FontFace(family, `url(${url(`fonts/${file}`)})`, { weight, style }).load().then((f2) => {
-        document.fonts.add(f2);
+      ([file, family, weight, style]) => new FontFace(family, `url(${url(`fonts/${file}`)})`, { weight, style }).load().then((f3) => {
+        document.fonts.add(f3);
       })
     )
   ]);
@@ -256,15 +272,15 @@ function SequenceView({ scenes, audio }) {
 // src/paper/layout.ts
 var ctx = null;
 var cache = /* @__PURE__ */ new Map();
-var fontString = (f2) => `${f2.italic ? "italic " : ""}${f2.weight ?? 400} ${f2.size}px ${f2.family}`;
-function measure(s, f2) {
-  const font2 = fontString(f2);
+var fontString = (f3) => `${f3.italic ? "italic " : ""}${f3.weight ?? 400} ${f3.size}px ${f3.family}`;
+function measure(s, f3) {
+  const font2 = fontString(f3);
   const key = font2 + "|" + s;
   const hit = cache.get(key);
   if (hit !== void 0) return hit;
-  if (typeof document === "undefined") return s.length * f2.size * 0.55;
+  if (typeof document === "undefined") return s.length * f3.size * 0.55;
   if (!ctx) ctx = document.createElement("canvas").getContext("2d");
-  if (!ctx) return s.length * f2.size * 0.55;
+  if (!ctx) return s.length * f3.size * 0.55;
   ctx.font = font2;
   const w = ctx.measureText(s).width;
   if (typeof document === "undefined" || !document.fonts || document.fonts.check(font2, s)) cache.set(key, w);
@@ -435,7 +451,7 @@ function penLoop(rx, ry, seed) {
   const RY = ry * asp * (1 + 2.2 * Math.abs(tilt));
   const harm = [2, 3].map((k) => [k, (8e-3 + r() * 0.014) / k, r() * Math.PI * 2]);
   const drift = (r() * 2 - 1) * 0.08;
-  const loop = (scale, extra) => {
+  const loop2 = (scale, extra) => {
     const out = [];
     const n2 = 64;
     for (let i = 0; i <= n2; i++) {
@@ -449,7 +465,7 @@ function penLoop(rx, ry, seed) {
     return out;
   };
   r();
-  return { main: loop(1, 0), second: null };
+  return { main: loop2(1, 0), second: null };
 }
 
 // src/paper/kit.ts
@@ -621,6 +637,12 @@ function parseLine(n2, src) {
     repeat = { n: Math.round(k), every: every ? dur(every.text) : 0 };
     rest = rest.slice(2).filter((x) => x !== every);
   }
+  let loop2;
+  if (rest[0]?.kind === "word" && rest[0].text.toLowerCase() === "loop") {
+    const every = rest.find((x) => x.kind === "kv" && x.key === "every");
+    loop2 = { every: every ? dur(every.text) : 0 };
+    rest = rest.slice(1).filter((x) => x !== every);
+  }
   const verbTok = rest[0];
   if (!verbTok || verbTok.kind !== "word") throw new Error("what should happen? Start with a verb, like: grow, draw, to, add");
   let verb2 = verbTok.text.toLowerCase();
@@ -636,7 +658,7 @@ function parseLine(n2, src) {
     if (a.kind === "kv") opts[a.key] = a.text;
     else plain.push(a);
   }
-  return { n: n2, src, when, explicitWhen: explicit, verb: verb2, args: plain, opts, bg, repeat };
+  return { n: n2, src, when, explicitWhen: explicit, verb: verb2, args: plain, opts, bg, repeat, loop: loop2 };
 }
 function parse(source) {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
@@ -1250,10 +1272,10 @@ function makeTrace(o = {}) {
     const k = peakK();
     return raw > -55 && t > 2.9 && t < 4.6 ? -55 + (raw + 55) * k : raw;
   };
-  const sample = (f2, t0, t1, dt = 0.02) => {
+  const sample = (f3, t0, t1, dt = 0.02) => {
     const out = [];
-    for (let t = t0; t < t1; t += dt) out.push([X(t), Y(f2(t))]);
-    out.push([X(t1), Y(f2(t1))]);
+    for (let t = t0; t < t1; t += dt) out.push([X(t), Y(f3(t))]);
+    out.push([X(t1), Y(f3(t1))]);
     return out;
   };
   const tick = (mv, label, c = P.muted) => {
@@ -1381,18 +1403,18 @@ function penLoopPts(rx, ry) {
   }
   return out;
 }
-var tracePts = (f2, t0, t1, kx = 140, ky = 4) => {
+var tracePts = (f3, t0, t1, kx = 140, ky = 4) => {
   const out = [];
-  for (let t = t0; t <= t1 + 1e-9; t += 0.02) out.push([(t - (t0 + t1) / 2) * kx, -f2(t) * ky]);
+  for (let t = t0; t <= t1 + 1e-9; t += 0.02) out.push([(t - (t0 + t1) / 2) * kx, -f3(t) * ky]);
   return out;
 };
-var traceAsset = (f2, t0, t1, color2, w = 7) => (h2) => {
-  const pts2 = tracePts(f2, t0, t1);
+var traceAsset = (f3, t0, t1, color2, w = 7) => (h2) => {
+  const pts2 = tracePts(f3, t0, t1);
   const mid = (Math.max(...pts2.map((p) => p[1])) + Math.min(...pts2.map((p) => p[1]))) / 2;
   return g(h2, { y: -mid }, line(h2, pts2, { stroke: color2, w, cap: "round", join: "round" }));
 };
-var traceBox = (f2, t0, t1, pad = 12) => {
-  const pts2 = tracePts(f2, t0, t1);
+var traceBox = (f3, t0, t1, pad = 12) => {
+  const pts2 = tracePts(f3, t0, t1);
   const ys = pts2.map((p) => p[1]), hgt = Math.max(...ys) - Math.min(...ys);
   const w = (t1 - t0) * 140;
   return [-w / 2 - pad, -hgt / 2 - pad, w + 2 * pad, hgt + 2 * pad];
@@ -1664,6 +1686,343 @@ var ASSETS = [
   { id: "axes-voltage", cat: "graphs", desc: "voltage axis (vertical) with ticks every 20 mV", since: V2, box: [-30, -340, 60, 680], draw: (h2) => g(h2, {}, line(h2, [[0, -320], [0, 320]], ink2(3)), Array.from({ length: 9 }, (_, i) => line(h2, [[-12, -320 + i * 80], [12, -320 + i * 80]], ink2(3)))) }
 ];
 
+// src/paper/host.ts
+var HOST = {
+  skin: "#6A4330",
+  skinShade: "#55352A",
+  hair: "#1D1916",
+  shirt: "#7A2E3A",
+  // maroon t-shirt (creator, 4 Nov): darker than the red pen, so it never reads as a mark
+  shirtShade: "#62242F",
+  steth: "#2B2B2E",
+  metal: "#C9CDD2",
+  mouth: "#3A1E1A",
+  beads: ["#C8352B", "#F2EEE6", "#23211E", "#2E6CB5", "#F2EEE6"]
+};
+var SH = [80, -232];
+var L1 = 100;
+var L2 = 94;
+var REST_L = [-106, -58];
+var REST_R = [106, -58];
+var POSES = {
+  idle: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: REST_R[0], hRy: REST_R[1], head: 0, lean: 0, lookX: 0, lookY: 0, browL: 0, browR: 0, browTilt: 0 },
+    disc: { mouth: "smile", eyes: "open", handL: "open", handR: "open", propL: "none", propR: "none", accent: "none" }
+  },
+  wave: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: 158, hRy: -412, head: 4, lean: 1.5, lookX: 0, lookY: 0, browL: 4, browR: 4, browTilt: 0 },
+    disc: { mouth: "grin", eyes: "open", handL: "open", handR: "open", propL: "none", propR: "none", accent: "none" }
+  },
+  point: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: 252, hRy: -266, head: 3, lean: 2, lookX: 1, lookY: 0, browL: 2, browR: 2, browTilt: 0 },
+    disc: { mouth: "smile", eyes: "open", handL: "open", handR: "point", propL: "none", propR: "none", accent: "none" }
+  },
+  think: {
+    num: { hLx: REST_L[0] + 10, hLy: REST_L[1], hRx: 16, hRy: -296, head: -6, lean: -1, lookX: 0.7, lookY: -1, browL: 6, browR: -1, browTilt: 0 },
+    disc: { mouth: "flat", eyes: "open", handL: "open", handR: "fist", propL: "none", propR: "none", accent: "question" }
+  },
+  idea: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: 196, hRy: -392, head: 3, lean: 1, lookX: 0.6, lookY: -0.8, browL: 7, browR: 7, browTilt: 0 },
+    disc: { mouth: "grin", eyes: "wide", handL: "open", handR: "point", propL: "none", propR: "none", accent: "idea" }
+  },
+  shrug: {
+    num: { hLx: -152, hLy: -236, hRx: 152, hRy: -236, head: 8, lean: 0, lookX: 0, lookY: 0, browL: 8, browR: 8, browTilt: -3 },
+    disc: { mouth: "flat", eyes: "half", handL: "open", handR: "open", propL: "none", propR: "none", accent: "none" }
+  },
+  surprised: {
+    num: { hLx: -138, hLy: -330, hRx: 138, hRy: -330, head: 0, lean: -2, lookX: 0, lookY: 0, browL: 11, browR: 11, browTilt: 0 },
+    disc: { mouth: "o", eyes: "wide", handL: "open", handR: "open", propL: "none", propR: "none", accent: "exclaim" }
+  },
+  calculator: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: 34, hRy: -122, head: -3, lean: 0, lookX: -0.3, lookY: 0.2, browL: -2, browR: -2, browTilt: 2 },
+    disc: { mouth: "flat", eyes: "half", handL: "open", handR: "fist", propL: "none", propR: "calculator", accent: "sweat" }
+  },
+  thumbsup: {
+    num: { hLx: REST_L[0], hLy: REST_L[1], hRx: 140, hRy: -266, head: 4, lean: 1, lookX: 0, lookY: 0, browL: 3, browR: 3, browTilt: 0 },
+    disc: { mouth: "grin", eyes: "happy", handL: "open", handR: "thumb", propL: "none", propR: "none", accent: "none" }
+  },
+  explain: {
+    num: { hLx: -66, hLy: -128, hRx: 150, hRy: -170, head: 2, lean: 1, lookX: 0.4, lookY: 0, browL: 3, browR: 3, browTilt: 0 },
+    disc: { mouth: "smile", eyes: "open", handL: "open", handR: "open", propL: "none", propR: "none", accent: "none" }
+  }
+};
+function mirror(p) {
+  const n2 = p.num, d = p.disc;
+  const num2 = {};
+  const put = (k, v) => {
+    if (v !== void 0) num2[k] = v;
+  };
+  put("hLx", n2.hRx === void 0 ? void 0 : -n2.hRx);
+  put("hLy", n2.hRy);
+  put("hRx", n2.hLx === void 0 ? void 0 : -n2.hLx);
+  put("hRy", n2.hLy);
+  put("head", n2.head === void 0 ? void 0 : -n2.head);
+  put("lean", n2.lean === void 0 ? void 0 : -n2.lean);
+  put("lookX", n2.lookX === void 0 ? void 0 : -n2.lookX);
+  put("lookY", n2.lookY);
+  put("browL", n2.browR);
+  put("browR", n2.browL);
+  put("browTilt", n2.browTilt);
+  const disc = {};
+  for (const k of ["mouth", "eyes", "accent"]) if (d[k] !== void 0) disc[k] = d[k];
+  if (d.handR) disc.handL = d.handR;
+  if (d.handL) disc.handR = d.handL;
+  if (d.propR) disc.propL = d.propR;
+  if (d.propL) disc.propR = d.propL;
+  return { num: num2, disc };
+}
+function ik(s, t, sgn) {
+  let dx = t[0] - s[0], dy = t[1] - s[1];
+  let d = Math.hypot(dx, dy) || 1e-6;
+  const dMax = L1 + L2 - 0.5, dMin = Math.abs(L1 - L2) + 1;
+  const dc = Math.min(dMax, Math.max(dMin, d));
+  const ux = dx / d, uy = dy / d;
+  const hd = [s[0] + ux * dc, s[1] + uy * dc];
+  const a = Math.acos(Math.min(1, Math.max(-1, (L1 * L1 + dc * dc - L2 * L2) / (2 * L1 * dc))));
+  const c1 = [s[0] + L1 * (ux * Math.cos(a) - uy * Math.sin(a)), s[1] + L1 * (ux * Math.sin(a) + uy * Math.cos(a))];
+  const c2 = [s[0] + L1 * (ux * Math.cos(-a) - uy * Math.sin(-a)), s[1] + L1 * (ux * Math.sin(-a) + uy * Math.cos(-a))];
+  const score = (p) => 0.45 * sgn * p[0] + p[1];
+  return { e: score(c1) >= score(c2) ? c1 : c2, hd };
+}
+var f2 = (n2) => Math.round(n2 * 10) / 10;
+function makeHost(x, y, o = {}) {
+  const seed = o.seed ?? 4242;
+  const nx = sig(x), ny = sig(y), ns = sig(o.s ?? 1), op = sig(0);
+  const idle = POSES.idle;
+  const num2 = Object.fromEntries(Object.entries(idle.num).map(([k, v]) => [k, sig(v)]));
+  const events = [{ t: -1e9, patch: idle.disc }];
+  const talkSpans = [];
+  const waveSpans = [];
+  const disc = () => {
+    const t = now();
+    const st = {};
+    for (const e of events) if (e.t <= t) Object.assign(st, e.patch);
+    return st;
+  };
+  const setDisc = (patch, at = 0) => (s) => (events.push({ t: s + at, patch }), events.sort((a, b) => a.t - b.t), s);
+  const tear = (() => {
+    const r = prng(seed);
+    const p = [];
+    for (let i = 0; i <= 16; i++) p.push([100 - 200 * i / 16, (r() - 0.5) * 7]);
+    return p;
+  })();
+  const BORDER = 16;
+  const shp = (h2, mode, d, fill, lw = 3.5, stroke = P.ink) => mode === "back" ? path(h2, d, { fill: P.card, stroke: P.card, lw: BORDER + lw, join: "round" }) : path(h2, d, { fill, stroke, lw, join: "round" });
+  const ell = (h2, mode, cx, cy, rx, ry, fill, lw = 3.5) => mode === "back" ? circle(h2, cx, cy, rx * 2, ry * 2, { fill: P.card, stroke: P.card, lw: BORDER + lw }) : circle(h2, cx, cy, rx * 2, ry * 2, { fill, stroke: P.ink, lw });
+  const limb = (h2, mode, pts2, color2, w) => mode === "back" ? line(h2, pts2, { stroke: P.card, w: w + BORDER + 7, cap: "round", join: "round" }) : [line(h2, pts2, { stroke: P.ink, w: w + 7, cap: "round", join: "round" }), line(h2, pts2, { stroke: color2, w, cap: "round", join: "round" })];
+  const torsoD = () => {
+    const top = `M ${tear[0][0]} ${tear[0][1]} L 97 -186 C 97 -224 90 -242 66 -250 L 30 -260 C 20 -246 -20 -246 -30 -260 L -66 -250 C -90 -242 -97 -224 -97 -186 L ${tear[tear.length - 1][0]} ${tear[tear.length - 1][1]}`;
+    return top + " " + tear.slice(1, -1).reverse().map((p) => `L ${f2(p[0])} ${f2(p[1])}`).join(" ") + " Z";
+  };
+  const headD = "M 0 -444 C 52 -444 70 -404 68 -362 C 66 -318 40 -284 0 -284 C -40 -284 -66 -318 -68 -362 C -70 -404 -52 -444 0 -444 Z";
+  const hairCap = "M -71 -366 C -78 -420 -50 -466 0 -468 C 50 -466 78 -420 71 -366 C 66 -386 50 -400 0 -402 C -50 -400 -66 -386 -71 -366 Z";
+  const curls = (() => {
+    const out = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI * (0.95 + 1.1 * i / 12);
+      out.push([f2(Math.cos(a) * 66), f2(-404 + Math.sin(a) * 60)]);
+    }
+    return out;
+  })();
+  const handEl = (h2, mode, e, hd, kind, sgn) => {
+    const dx = hd[0] - e[0], dy = hd[1] - e[1], d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    let px = -uy, py = ux;
+    if (Math.abs(py) < 0.35 ? px * sgn > 0 : py > 0) {
+      px = -px;
+      py = -py;
+    }
+    const at = (a, b) => [hd[0] + ux * a + px * b, hd[1] + uy * a + py * b];
+    const rot = Math.atan2(uy, ux) * 180 / Math.PI;
+    const parts = [];
+    if (kind === "point") {
+      parts.push(limb(h2, mode, [at(6, 7), at(34, 8)], HOST.skin, 9));
+      parts.push(ell(h2, mode, hd[0], hd[1], 18, 15, HOST.skin));
+      if (mode === "front") {
+        parts[parts.length - 1] = circle(h2, hd[0], hd[1], 36, 30, { fill: HOST.skin, stroke: P.ink, lw: 3.5, rot });
+        for (const k of [-1, -8]) parts.push(line(h2, [at(2, k), at(13, k)], { stroke: HOST.skinShade, w: 2.5, cap: "round" }));
+        parts.push(circle(h2, ...at(-2, 12), 14, 10, { fill: HOST.skin, stroke: P.ink, lw: 2.5, rot }));
+      }
+      return parts;
+    }
+    if (kind === "thumb") {
+      const tx = hd[0] - 6 * sgn;
+      parts.push(limb(h2, mode, [[tx, hd[1] - 10], [tx - 3 * sgn, hd[1] - 34]], HOST.skin, 11));
+      parts.push(mode === "back" ? rect(h2, hd[0], hd[1], 36 + BORDER, 32 + BORDER, { r: 12, fill: P.card }) : rect(h2, hd[0], hd[1], 36, 32, { r: 11, fill: HOST.skin, stroke: P.ink, lw: 3.5 }));
+      if (mode === "front") for (const k of [-5, 3, 11]) parts.push(line(h2, [[hd[0] + 2 * sgn, hd[1] + k - 2], [hd[0] + 14 * sgn, hd[1] + k - 2]], { stroke: HOST.skinShade, w: 2.5, cap: "round" }));
+      return parts;
+    }
+    parts.push(ell(h2, mode, hd[0], hd[1], kind === "open" ? 18 : 16, kind === "open" ? 17 : 15, HOST.skin));
+    if (mode === "front" && kind === "fist") parts.push(line(h2, [[hd[0] - 8 * sgn, hd[1] - 4], [hd[0] + 6 * sgn, hd[1] - 4]], { stroke: HOST.skinShade, w: 2.5, cap: "round" }));
+    return parts;
+  };
+  const calculatorEl = (h2, mode, hd) => {
+    const cx = hd[0] - 14, cy = hd[1] - 40;
+    if (mode === "back") return rect(h2, cx, cy, 78 + BORDER, 108 + BORDER, { r: 12, fill: P.card });
+    const keys = [];
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) keys.push(rect(h2, cx - 22 + c * 22, cy - 2 + r * 17, 15, 11, { r: 3, fill: "#D9D3C6" }));
+    return [
+      rect(h2, cx, cy, 78, 108, { r: 10, fill: "#E9E4D8", stroke: P.ink, lw: 3.5 }),
+      rect(h2, cx, cy - 32, 58, 22, { r: 4, fill: "#B8C8B2", stroke: P.ink, lw: 2 }),
+      text(h2, "0", cx + 22, cy - 32, { size: 16, weight: 700, fill: P.ink, align: "r" }),
+      ...keys
+    ];
+  };
+  const armEl = (h2, mode, side, D2) => {
+    const sgn = side === "R" ? 1 : -1;
+    const s = [SH[0] * sgn, SH[1]];
+    let tx = side === "R" ? num2.hRx() : num2.hLx(), ty = side === "R" ? num2.hRy() : num2.hLy();
+    const t = now();
+    if (waveSpans.some(([a, b]) => t >= a && t <= b) && ty < -330 && sgn * tx > 100) tx += Math.sin(t * 2 * Math.PI * 2.2) * 26 * sgn;
+    const { e, hd } = ik(s, [tx, ty], sgn);
+    const sl = [s[0] + (e[0] - s[0]) * 0.5, s[1] + (e[1] - s[1]) * 0.5];
+    const prop = side === "R" ? D2.propR : D2.propL;
+    const out = [];
+    out.push(limb(h2, mode, [sl, e, hd], HOST.skin, 28));
+    out.push(limb(h2, mode, [[s[0] - 10 * sgn, s[1] + 4], sl], HOST.shirt, 40));
+    if (prop === "calculator") out.push(calculatorEl(h2, mode, hd));
+    if (mode === "front" && side === "R") {
+      const w = [e[0] + (hd[0] - e[0]) * 0.74, e[1] + (hd[1] - e[1]) * 0.74];
+      const dx = hd[0] - e[0], dy = hd[1] - e[1], d = Math.hypot(dx, dy) || 1;
+      const nx2 = -dy / d, ny2 = dx / d;
+      for (let i = 0; i < 5; i++) {
+        const k = (i - 2) * 6.2;
+        out.push(circle(h2, w[0] + nx2 * k, w[1] + ny2 * k, 8, 8, { fill: HOST.beads[i], stroke: P.ink, lw: 1.2 }));
+      }
+    }
+    out.push(handEl(h2, mode, e, hd, side === "R" ? D2.handR : D2.handL, sgn));
+    return out;
+  };
+  const faceEl = (h2, D2) => {
+    const t = now();
+    const ph = (t + seed % 7 * 0.37) % 4.3;
+    const blink = ph < 0.14 ? Math.sin(ph / 0.14 * Math.PI) : 0;
+    const lx = num2.lookX() * 5, ly = num2.lookY() * 4;
+    const out = [];
+    const eyeY = -360;
+    for (const sgn of [-1, 1]) {
+      const ex = 25 * sgn;
+      if (D2.eyes === "happy") {
+        out.push(path(h2, `M ${ex - 11} ${eyeY + 4} Q ${ex} ${eyeY - 10} ${ex + 11} ${eyeY + 4}`, { stroke: P.ink, lw: 4, cap: "round" }));
+      } else {
+        const ry = (D2.eyes === "wide" ? 17 : 14) * (D2.eyes === "half" ? 0.6 : 1) * (1 - 0.92 * blink);
+        const rx = D2.eyes === "wide" ? 14 : 12;
+        const cy = eyeY + (D2.eyes === "half" ? 4 : 0);
+        out.push(circle(h2, ex, cy, rx * 2, Math.max(1.5, ry * 2), { fill: "#FBF8F1", stroke: P.ink, lw: 2.5 }));
+        if (ry > 4) out.push(circle(h2, ex + lx, cy + ly + (D2.eyes === "half" ? 2 : 0), 13, Math.min(13, ry * 1.6), { fill: P.ink }));
+        if (D2.eyes === "half") out.push(line(h2, [[ex - rx - 1, cy - ry + 1], [ex + rx + 1, cy - ry + 1]], { stroke: P.ink, w: 3.5, cap: "round" }));
+      }
+      const raise = sgn < 0 ? num2.browL() : num2.browR();
+      const by = eyeY - 26 - raise;
+      out.push(line(h2, [[ex - 13 * sgn, by + num2.browTilt()], [ex + 13 * sgn, by - num2.browTilt()]], { stroke: HOST.hair, w: 6.5, cap: "round" }));
+    }
+    out.push(path(h2, "M -4 -338 Q 0 -332 6 -337", { stroke: HOST.skinShade, lw: 3, cap: "round" }));
+    let m = D2.mouth;
+    if (talkSpans.some(([a, b]) => t >= a && t <= b)) {
+      const k = Math.floor(t * 9.5 + Math.sin(t * 13) * 1.3) % 3;
+      m = k === 0 ? "grin" : k === 1 ? "o" : D2.mouth === "grin" ? "smile" : D2.mouth;
+    }
+    const my = -314;
+    if (m === "smile") out.push(path(h2, `M -17 ${my - 3} Q 0 ${my + 11} 17 ${my - 3}`, { stroke: P.ink, lw: 4, cap: "round" }));
+    if (m === "grin") out.push(
+      path(h2, `M -20 ${my - 5} Q 0 ${my + 22} 20 ${my - 5} Z`, { fill: HOST.mouth, stroke: P.ink, lw: 3.5, join: "round" }),
+      path(h2, `M -15 ${my - 3} L 15 ${my - 3} Q 0 ${my + 3} -15 ${my - 3} Z`, { fill: "#FBF8F1" })
+    );
+    if (m === "o") out.push(circle(h2, 0, my + 2, 15, 19, { fill: HOST.mouth, stroke: P.ink, lw: 3.5 }));
+    if (m === "flat") out.push(line(h2, [[-13, my], [13, my]], { stroke: P.ink, w: 4, cap: "round" }));
+    if (m === "frown") out.push(path(h2, `M -15 ${my + 5} Q 0 ${my - 7} 15 ${my + 5}`, { stroke: P.ink, lw: 4, cap: "round" }));
+    if (m === "smirk") out.push(path(h2, `M -14 ${my} Q 4 ${my + 5} 18 ${my - 7}`, { stroke: P.ink, lw: 4, cap: "round" }));
+    return out;
+  };
+  const accentEl = (h2, D2) => {
+    const t = now();
+    const bob = Math.sin(t * 3) * 4;
+    if (D2.accent === "question") return text(h2, "?", 108, -470 + bob, { size: 84, weight: 700, fill: P.pen, family: SERIF });
+    if (D2.accent === "exclaim") return text(h2, "!", 100, -478 + bob, { size: 88, weight: 700, fill: P.pen, family: SERIF });
+    if (D2.accent === "sweat") return g(
+      h2,
+      { x: -84, y: -418 + Math.abs(bob) },
+      path(h2, "M 0 -18 C 10 -2 13 6 0 14 C -13 6 -10 -2 0 -18 Z", { fill: "#BFD6EE", stroke: P.ink, lw: 2.5, join: "round" })
+    );
+    if (D2.accent === "idea") return g(
+      h2,
+      { x: 0, y: -540 + bob * 0.6 },
+      circle(h2, 0, 0, 52, 52, { fill: "#FFF3A8", stroke: P.ink, lw: 3.5 }),
+      rect(h2, 0, 33, 24, 16, { r: 3, fill: "#BEB9B0", stroke: P.ink, lw: 3 }),
+      ...[-1, 0, 1].map((k) => line(h2, [[k * 44, -26 - (k === 0 ? 14 : 0)], [k * 58, -36 - (k === 0 ? 22 : 0)]], { stroke: P.ink, w: 3.5, cap: "round" }))
+    );
+    return null;
+  };
+  const stethEl = (h2) => {
+    const tube = (d) => [path(h2, d, { stroke: P.ink, lw: 10, cap: "round" }), path(h2, d, { stroke: HOST.steth, lw: 5.5, cap: "round" })];
+    return [
+      ...tube("M -27 -258 C -40 -232 -46 -200 -44 -158"),
+      ...tube("M 27 -258 C 40 -232 46 -210 44 -186"),
+      ...tube("M 44 -186 C 38 -174 34 -166 33 -156"),
+      ...tube("M 44 -186 C 52 -176 56 -168 57 -158"),
+      circle(h2, 33, -153, 8, 8, { fill: HOST.metal, stroke: P.ink, lw: 2 }),
+      circle(h2, 57, -155, 8, 8, { fill: HOST.metal, stroke: P.ink, lw: 2 }),
+      circle(h2, -44, -146, 30, 30, { fill: HOST.metal, stroke: P.ink, lw: 3.5 }),
+      circle(h2, -44, -146, 16, 16, { fill: "#E6E9EC", stroke: P.ink, lw: 2 })
+    ];
+  };
+  const figure = (h2, mode, D2) => {
+    const t = now();
+    const breathe = Math.sin(t * 1.7 + seed) * 2.2;
+    const headG = (...c) => g(h2, { y: breathe * 0.6 }, g(h2, { x: 0, y: -284, rot: num2.head() }, g(h2, { y: 294 }, ...c)));
+    return g(
+      h2,
+      { rot: num2.lean() },
+      shp(h2, mode, torsoD(), HOST.shirt),
+      mode === "front" ? path(h2, "M -30 -260 C -20 -246 20 -246 30 -260", { stroke: HOST.shirtShade, lw: 5, cap: "round" }) : null,
+      headG(
+        shp(h2, mode, "M -20 -296 L 20 -296 L 22 -250 L -22 -250 Z", HOST.skin),
+        mode === "front" ? path(h2, "M -30 -260 C -20 -246 20 -246 30 -260 L 22 -248 L -22 -248 Z", { fill: HOST.shirt }) : null,
+        mode === "front" ? path(h2, "M -30 -260 C -20 -246 20 -246 30 -260", { stroke: P.ink, lw: 3.5, cap: "round" }) : null,
+        ell(h2, mode, -68, -356, 11, 17, HOST.skin),
+        ell(h2, mode, 68, -356, 11, 17, HOST.skin),
+        shp(h2, mode, headD, HOST.skin),
+        ...curls.map(([cx, cy]) => ell(h2, mode, cx, cy, 15, 15, HOST.hair, 3)),
+        shp(h2, mode, hairCap, HOST.hair),
+        mode === "front" ? curls.map(([cx, cy]) => circle(h2, cx, cy + 3, 26, 26, { fill: HOST.hair })) : null,
+        mode === "front" ? faceEl(h2, D2) : null
+      ),
+      mode === "front" ? stethEl(h2) : null,
+      armEl(h2, mode, "L", D2),
+      armEl(h2, mode, "R", D2)
+    );
+  };
+  const el = (h2) => {
+    if (op() <= 1e-3) return null;
+    const D2 = disc();
+    return g(
+      h2,
+      { x: nx(), y: ny(), s: ns(), op: op() },
+      h2("g", { filter: "url(#shadow)" }, figure(h2, "back", D2)),
+      figure(h2, "front", D2),
+      accentEl(h2, D2)
+    );
+  };
+  let facing = o.side ?? "r";
+  const pose = (name, side = facing, d = 0.55) => {
+    facing = side;
+    let p = typeof name === "string" ? POSES[name] : name;
+    if (!p) throw new Error("no host pose " + String(name));
+    if (side === "l") p = mirror(p);
+    const tw = Object.entries(p.num).map(([k, v]) => num2[k].to(v, d, easeInOutCubic));
+    const extra = [];
+    if (name === "wave") extra.push((s) => (waveSpans.push([s, s + d + 1.6]), s + d + 1.6));
+    return all(...tw, setDisc(p.disc, d * 0.45), ...extra);
+  };
+  const look = (lx, ly = 0, d = 0.25) => all(num2.lookX.to(lx, d, easeInOutCubic), num2.lookY.to(ly, d, easeInOutCubic));
+  const face = (patch) => setDisc(patch);
+  const talk = (seconds) => (s) => (talkSpans.push([s, s + seconds]), s + seconds);
+  const enter = (d = 0.7) => chain(all(ny.set(y + 560), op.set(1)), ny.to(y, d, easeOutBack));
+  const leave = (d = 0.5) => chain(ny.to(y + 560, d, easeInCubic), op.set(0));
+  const moveTo = (x2, y2, d = T.move) => all(nx.to(x2, d, easeInOutCubic), ny.to(y2, d, easeInOutCubic));
+  return { el, pose, look, face, talk, enter, leave, moveTo, x: nx, y: ny, s: ns, op, show: () => op.set(1) };
+}
+
 // src/mic/values.ts
 var COLORS = {
   ink: P.ink,
@@ -1712,7 +2071,19 @@ function color(s) {
   if (/^#[0-9a-f]{6}$/i.test(s) || /^#[0-9a-f]{3}$/i.test(s)) return s;
   throw new Error(`"${s}" is not a colour. Use a name (${Object.keys(COLORS).slice(0, 12).join(", ")} ...) or a hex like #1F4E9C`);
 }
+var spring = (v) => 1 - Math.exp(-6 * v) * Math.cos(v * Math.PI * 4.5) * (1 - v) - (v >= 1 ? 0 : 0);
+var bounce = (v) => {
+  const n2 = 7.5625, d = 2.75;
+  if (v < 1 / d) return n2 * v * v;
+  if (v < 2 / d) return n2 * (v -= 1.5 / d) * v + 0.75;
+  if (v < 2.5 / d) return n2 * (v -= 2.25 / d) * v + 0.9375;
+  return n2 * (v -= 2.625 / d) * v + 0.984375;
+};
+var elastic = (v) => v <= 0 ? 0 : v >= 1 ? 1 : Math.pow(2, -10 * v) * Math.sin((v * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
 var EASES = {
+  spring,
+  bounce,
+  elastic,
   linear,
   in: easeInCubic,
   out: easeOutCubic,
@@ -1882,14 +2253,14 @@ function csig(init) {
     }
     return v;
   };
-  const f2 = (() => at(now()));
-  f2.at = at;
-  f2.to = (c, d, e = easeInOutCubic) => (s) => {
+  const f3 = (() => at(now()));
+  f3.at = at;
+  f3.to = (c, d, e = easeInOutCubic) => (s) => {
     segs.push({ s, d, to: c, e });
     segs.sort((a, b) => a.s - b.s);
     return s + d;
   };
-  return f2;
+  return f3;
 }
 
 // src/mic/objects.ts
@@ -1951,6 +2322,42 @@ var ionKind = (s) => {
   if (!ION_KINDS.includes(k)) throw new Error(`kind: use one of ${ION_KINDS.join(", ")}`);
   return k;
 };
+function smoothPts(p, per = 16) {
+  if (p.length < 3) return p;
+  const out = [];
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[Math.max(0, i - 1)], p1 = p[i], p2 = p[i + 1], p3 = p[Math.min(p.length - 1, i + 2)];
+    for (let k = 0; k < per; k++) {
+      const t = k / per, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map((j) => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  out.push(p[p.length - 1]);
+  return out;
+}
+function bendPts(a, b, bend, n2 = 32) {
+  const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1];
+  const c = [mx + dy * bend, my - dx * bend];
+  return Array.from({ length: n2 + 1 }, (_, i) => {
+    const t = i / n2, u = 1 - t;
+    return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]];
+  });
+}
+function shapePts(p, opts, env) {
+  if (opts.bend !== void 0 && p.length === 2) return bendPts(p[0], p[1], opts.bend === "" ? 0.25 : num(opts.bend, env));
+  if (opts.smooth !== void 0 && p.length > 2) return smoothPts(p);
+  return p;
+}
+function alongPts(p, u) {
+  const L = [0];
+  for (let i = 1; i < p.length; i++) L.push(L[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  const d = Math.max(0, Math.min(1, u)) * L[L.length - 1];
+  for (let i = 1; i < p.length; i++) if (L[i] >= d) {
+    const k = (d - L[i - 1]) / (L[i] - L[i - 1] || 1);
+    return [[p[i - 1][0] + (p[i][0] - p[i - 1][0]) * k, p[i - 1][1] + (p[i][1] - p[i - 1][1]) * k], Math.atan2(p[i][1] - p[i - 1][1], p[i][0] - p[i - 1][0]) * 180 / Math.PI];
+  }
+  return [p[p.length - 1], 0];
+}
 function boundsOf(p, pad = 0) {
   const xs = p.map((q) => q[0]), ys = p.map((q) => q[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -2167,6 +2574,7 @@ var TYPES = {
       for (const [k, t] of Object.entries(TRACE_TIMES)) pts2[k] = () => [X(t), Y(wave(t))];
       pts2.pen = () => tr.tip();
       return {
+        _trace: tr,
         props,
         draw: (h2) => tr.el(h2),
         box: () => {
@@ -2271,7 +2679,7 @@ var TYPES = {
   ions: {
     name: "ions",
     desc: "a drifting field of ions scattered in an area (the same scatter every render)",
-    opts: "kind=na|k|cl|ca|h|an  count=12  area=w,h  seed=",
+    opts: "kind=na|k|cl|ca|h|an  count=12  area=w,h  seed=  shown= (how many show: to outside shown=12 in=2s brings them in one by one)",
     example: "add ions outside kind=na count=14 area=900,220 at=0,-260",
     make(o) {
       const kind = ionKind(o.opts.kind ?? o.text);
@@ -2294,14 +2702,60 @@ var TYPES = {
       }
       const pts2 = {};
       spots.forEach((s, i) => pts2[String(i + 1)] = () => [s.x, s.y]);
+      const shown = sig(o.opts.shown !== void 0 ? num(o.opts.shown, o.env) : count);
       return {
-        draw: (h2) => g(h2, {}, spots.map((s) => {
+        props: { shown },
+        draw: (h2) => g(h2, {}, spots.map((s, i) => {
           const t = now();
-          return g(h2, { x: s.x + 2.6 * Math.sin(t * s.fq * 2 * Math.PI + s.ph), y: s.y + 2.6 * Math.cos(t * s.fq * 1.6 * Math.PI + s.ph * 1.7) }, ionBall(h2, kind));
+          const k = Math.max(0, Math.min(1, shown() - i));
+          if (k <= 1e-3) return null;
+          return g(h2, { x: s.x + 2.6 * Math.sin(t * s.fq * 2 * Math.PI + s.ph), y: s.y + 2.6 * Math.cos(t * s.fq * 1.6 * Math.PI + s.ph * 1.7), op: k, s: 0.7 + 0.3 * k }, ionBall(h2, kind));
         })),
         box: () => ({ cx: 0, cy: 0, w: aw, h: ah }),
         points: pts2
       };
+    }
+  },
+  flow: {
+    name: "flow",
+    desc: "a steady stream of particles along a path (ions through a channel, blood cells, a drug); rate and speed can be animated",
+    opts: 'path="x,y x,y ..."  kind=na|k|cl|ca|cell|drug|dot  rate=3 (per s)  speed=260 (px/s)  spread=14  straight',
+    example: 'add flow stream path="nav1.outside nav1.pore nav1.inside" kind=na rate=0   \xB7   to stream rate=6 in=0.5s',
+    make(o) {
+      return makeFlow(o);
+    }
+  },
+  link: {
+    name: "link",
+    desc: "a line or arrow joining two things that stays attached while they move",
+    opts: "from=<thing or point>  to=<thing or point>  head (an arrow)  bend=0.25  dash  gap=10",
+    example: "add link l from=n1 to=label1 head bend=0.2",
+    make(o) {
+      o.opts.follow = "";
+      return makeLine(o, o.opts.head !== void 0 || o.opts.arrow !== void 0);
+    }
+  },
+  zoom: {
+    name: "zoom",
+    desc: "a magnifier: a round inset showing a close-up of a spot while the whole picture stays on screen",
+    opts: "of=<point>  r=180 (radius)  mag=3 (magnification; to z mag=6 zooms further)",
+    example: "add zoom z of=cell.right at=550,-250 r=200 mag=3 hidden   \xB7   grow z",
+    make(o) {
+      const r = sig(n(o, "r", 180)), mag = sig(n(o, "mag", 3));
+      return { props: { r, mag }, draw: () => null, box: () => ({ cx: 0, cy: 0, w: 2 * r(), h: 2 * r() }) };
+    }
+  },
+  host: {
+    name: "host",
+    desc: "the channel host (the drawn stand-in): enter, leave, pose, talk, look",
+    opts: "side=left|right (which way it faces)  hidden (then: enter me)",
+    example: "add host me at=690,575 side=left hidden   \xB7   enter me   \xB7   pose me point   \xB7   talk me in=3s",
+    make(o) {
+      const side = (o.opts.side ?? "left").toLowerCase().startsWith("r") ? "r" : "l";
+      const host = makeHost(0, 0, { side });
+      o.base.op.set(1)(0);
+      if (o.opts.hidden === void 0) host.op.set(1)(0);
+      return { draw: (h2) => host.el(h2), box: () => ({ cx: 0, cy: -260, w: 420, h: 560 }), points: { hand: () => [side === "l" ? -250 : 250, -270], head: () => [0, -400] }, _host: host };
     }
   },
   membrane: {
@@ -2408,18 +2862,39 @@ var TYPES = {
   }
 };
 function makeLine(o, head) {
+  const live = o.opts.follow !== void 0 && o.env.live;
+  const fromL = live && o.opts.from ? o.env.live(o.opts.from) : null, toL = live && o.opts.to ? o.env.live(o.opts.to) : null;
   const from = o.opts.from ? points(o.opts.from, o.env)[0] : [0, 0];
   const to = o.opts.to ? points(o.opts.to, o.env)[0] : [200, 0];
   const via = o.opts.via ? points(o.opts.via, o.env) : [];
-  const p = [from, ...via, to];
   const lw = n(o, "lw", head ? 5 : 4);
+  const gap = n(o, "gap", live ? 10 : 0);
   const dash = o.opts.dash !== void 0 ? o.opts.dash && /\d/.test(o.opts.dash) ? o.opts.dash.replace(",", " ") : "18 12" : void 0;
   if (!o.opts.color) o.base.color = csig(head ? P.pen : P.ink);
   const end = sig(1);
-  const pts2 = { start: () => from, end: () => to };
+  const ptsNow = () => {
+    let a = from, b = to;
+    if (fromL || toL) {
+      const t = now();
+      if (fromL) a = fromL(t);
+      if (toL) b = toL(t);
+      const trim = (p, q, ref) => {
+        if (!ref || ref.includes(".") || !o.env.live) return p;
+        const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1, r = 50 + gap;
+        return [p[0] + (q[0] - p[0]) / L * r, p[1] + (q[1] - p[1]) / L * r];
+      };
+      [a, b] = [trim(a, b, o.opts.from), trim(b, a, o.opts.to)];
+    }
+    return shapePts([a, ...via, b], o.opts, o.env);
+  };
+  const pts2 = { start: () => ptsNow()[0], end: () => {
+    const q = ptsNow();
+    return q[q.length - 1];
+  }, middle: () => alongPts(ptsNow(), 0.5)[0] };
   return {
     props: { end },
     draw: (h2) => {
+      const p = ptsNow();
       const e = end();
       const c = o.base.color();
       let tipA = p[p.length - 2], tipB = p[p.length - 1];
@@ -2436,8 +2911,63 @@ function makeLine(o, head) {
       }
       return g(h2, {}, strokeLine(h2, p, c, lw, e, dash), head && e > 0.05 ? arrowHead(h2, tipA, tipB, c, lw) : null);
     },
-    box: () => boundsOf(p, lw),
+    box: () => boundsOf(ptsNow(), lw),
     points: pts2
+  };
+}
+function makeFlow(o) {
+  const raw = o.opts.path ?? o.opts.via;
+  if (!raw) throw new Error('a flow needs path="x,y x,y ..." (named points work too)');
+  const path2 = o.opts.smooth === void 0 && o.opts.straight !== void 0 ? points(raw, o.env) : smoothPts(points(raw, o.env));
+  const L = (() => {
+    let s2 = 0;
+    for (let i = 1; i < path2.length; i++) s2 += Math.hypot(path2[i][0] - path2[i - 1][0], path2[i][1] - path2[i - 1][1]);
+    return s2;
+  })();
+  const kind = (o.opts.kind ?? "na").toLowerCase();
+  const rate = sig(n(o, "rate", 3)), speed = sig(n(o, "speed", 260));
+  const jitter2 = n(o, "spread", 14);
+  const spawns = [];
+  let tDone = 0, acc = 0;
+  const upTo = (t) => {
+    const dt = 1 / 120;
+    while (tDone < t && spawns.length < 2e4) {
+      acc += Math.max(0, rate.at(tDone)) * dt;
+      while (acc >= 1) {
+        acc -= 1;
+        spawns.push(tDone);
+      }
+      tDone += dt;
+    }
+  };
+  const r = prng(o.seed + 5);
+  const offs = Array.from({ length: 64 }, () => (r() - 0.5) * 2 * jitter2);
+  const drawP = (h2, i) => {
+    if (kind === "cell" || kind === "rbc") return g(h2, {}, circle(h2, 0, 0, 46, 30, { fill: "#C8504A", stroke: P.ink, lw: 2 }), circle(h2, 0, 0, 22, 12, { fill: "#A23E39" }));
+    if (kind === "dot") return circle(h2, 0, 0, 16, 16, { fill: o.base.color() });
+    if (kind === "drug") return circle(h2, 0, 0, 26, 26, { fill: "#D9C3EA", stroke: P.ink, lw: 2.5 });
+    return g(h2, { s: 0.7 }, ionBall(h2, ionKind(kind)));
+  };
+  return {
+    props: { rate, speed },
+    draw: (h2) => {
+      const t = now();
+      upTo(t);
+      const sp = speed();
+      const out = [];
+      for (let i = spawns.length - 1; i >= 0; i--) {
+        const age = t - spawns[i];
+        const u = age * sp / L;
+        if (u > 1) break;
+        const [p, ang] = alongPts(path2, u);
+        const off = offs[i % offs.length], a = (ang + 90) * Math.PI / 180;
+        const fade = Math.min(1, u / 0.06, (1 - u) / 0.06);
+        out.push(g(h2, { x: p[0] + Math.cos(a) * off, y: p[1] + Math.sin(a) * off, op: fade }, drawP(h2, i)));
+      }
+      return g(h2, {}, out);
+    },
+    box: () => boundsOf(path2, 30),
+    points: { start: () => path2[0], end: () => path2[path2.length - 1] }
   };
 }
 var svgCache = /* @__PURE__ */ new Map();
@@ -2484,7 +3014,7 @@ function makePlot(o) {
   const api = { X: X2, Y: Y2, x0, x1, y0, y1, logx, w, h: ht };
   const ticks = (k) => o.opts[k] ? o.opts[k].split(",").map((v) => num(v, o.env)) : [];
   const xt = ticks("xticks"), yt = ticks("yticks");
-  const lab = (v) => Math.abs(v) >= 1e3 || Math.abs(v) < 0.01 && v !== 0 ? v.toExponential(0).replace("e+", "e") : String(+v.toFixed(3));
+  const lab = (v) => Number.isInteger(v) && Math.abs(v) < 1e6 ? String(v) : Math.abs(v) >= 1e6 || Math.abs(v) < 0.01 && v !== 0 ? v.toExponential(0).replace("e+", "e") : String(+v.toFixed(3));
   const axes = sig(1);
   return {
     props: { axes },
@@ -2507,6 +3037,8 @@ function makePlot(o) {
     _plot: api
   };
 }
+var VENT = monotone([[0, -90], [10, -90], [12, 22], [16, 10], [30, 5], [120, 2], [200, -12], [250, -45], [290, -82], [320, -90], [1e3, -90]]);
+var SA = monotone([[0, -60], [350, -50], [560, -41], [600, -40], [640, 8], [660, 10], [700, -10], [760, -55], [800, -60]]);
 function makeCurve(o) {
   const plot = o.parent?._plot;
   if (!plot) throw new Error("a curve goes on a plot: add on=<plot name>, like on=dr");
@@ -2516,13 +3048,18 @@ function makeCurve(o) {
     line: { m: 1, b: 0 },
     decay: { a: plot.y1, k: 1, c: plot.y0 },
     rise: { a: plot.y1, k: 1, c: plot.y0 },
-    points: {}
+    points: {},
+    // presets (x in seconds for ecg, ms for the action potentials, hours for doses)
+    ecg: { hr: 72, amp: 1, base: 0 },
+    cardiac: { amp: 1 },
+    pacemaker: { cycle: 800 },
+    doses: { dose: 50, k: 0.15, tau: 8, n: 99 }
   };
-  if (!P0[fn]) throw new Error(`fn: use hill, line, decay, rise or points`);
+  if (!P0[fn]) throw new Error(`fn: use hill, line, decay, rise, points, ecg, cardiac, pacemaker or doses`);
   const props = {};
   for (const [k, d] of Object.entries(P0[fn])) props[k] = sig(o.opts[k] !== void 0 ? num(o.opts[k], o.env) : d);
   const pts2 = o.opts.points ? monotone(points(o.opts.points, o.env)) : null;
-  const f2 = (x) => {
+  const f3 = (x) => {
     switch (fn) {
       case "hill": {
         const e = props.ec50(), nn = props.n();
@@ -2534,6 +3071,23 @@ function makeCurve(o) {
         return props.c() + (props.a() - props.c()) * Math.exp(-props.k() * x);
       case "rise":
         return props.c() + (props.a() - props.c()) * (1 - Math.exp(-props.k() * x));
+      case "ecg": {
+        const per = 60 / Math.max(20, props.hr()), u = (x % per + per) % per;
+        const gs = (a, m, w) => a * Math.exp(-((u - m) ** 2) / (2 * w * w));
+        return props.base() + props.amp() * (gs(0.15, 0.1, 0.025) + gs(-0.12, 0.19, 8e-3) + gs(1.2, 0.21, 9e-3) + gs(-0.28, 0.232, 0.01) + gs(0.32, 0.45, 0.042));
+      }
+      case "cardiac":
+        return -90 + (VENT(x) + 90) * props.amp();
+      case "pacemaker": {
+        const c = Math.max(200, props.cycle()), u = (x % c + c) % c;
+        return SA(u * (800 / c));
+      }
+      case "doses": {
+        let y = 0;
+        const tau = Math.max(0.1, props.tau()), k = props.k(), nn = Math.max(1, Math.round(props.n()));
+        for (let i = 0; i < nn && i * tau <= x; i++) y += props.dose() * Math.exp(-k * (x - i * tau));
+        return y;
+      }
       default:
         return pts2(x);
     }
@@ -2542,13 +3096,17 @@ function makeCurve(o) {
   const toU = (x) => plot.logx ? (Math.log10(x) - Math.log10(plot.x0)) / (Math.log10(plot.x1) - Math.log10(plot.x0)) : (x - plot.x0) / (plot.x1 - plot.x0);
   props.draw = sig(1);
   props.tip = sig(0);
+  props.area = sig(o.opts.area !== void 0 ? num(o.opts.area || "1", o.env) : 0);
+  props.track = sig(0);
+  props.tx = sig(o.opts.tx !== void 0 ? num(o.opts.tx, o.env) : plot.x0);
+  const unit = o.opts.unit ?? "", dec = o.opts.decimals !== void 0 ? Math.round(num(o.opts.decimals, o.env)) : 0;
   const lw = n(o, "lw", 7);
   const dash = o.opts.dash !== void 0 ? "22 14" : void 0;
   if (!o.opts.color) o.base.color = csig(P.volt);
   const yc = (y) => Math.max(plot.y0 - (plot.y1 - plot.y0) * 0.05, Math.min(plot.y1 + (plot.y1 - plot.y0) * 0.05, y));
   const at = (u) => {
     const x = fx(u);
-    return [plot.X(x), plot.Y(yc(f2(x)))];
+    return [plot.X(x), plot.Y(yc(f3(x)))];
   };
   return {
     props,
@@ -2562,11 +3120,23 @@ function makeCurve(o) {
       }
       const col = o.base.color();
       const tip = at(e);
+      const ar = props.area(), tr = props.track();
+      const hexCol = col.startsWith("#") ? col : P.volt;
+      const base = plot.Y(Math.max(plot.y0, Math.min(plot.y1, 0)));
+      const tx = Math.max(plot.x0, Math.min(plot.x1, props.tx())), ty = yc(f3(tx)), tp = [plot.X(tx), plot.Y(ty)];
       return g(
         h2,
         {},
+        ar > 1e-3 ? line(h2, [[P2[0][0], base], ...P2, [P2[P2.length - 1][0], base]], { closed: true, fill: rgbaHex(hexCol, 0.22 * ar), stroke: "none" }) : null,
         strokeLine(h2, P2, col, lw, 1, dash),
-        props.tip() > 1e-3 ? circle(h2, tip[0], tip[1], 40, 40, { fill: rgbaHex(col.startsWith("#") ? col : P.volt, 0.25 * props.tip()) }) : null
+        props.tip() > 1e-3 ? circle(h2, tip[0], tip[1], 40, 40, { fill: rgbaHex(hexCol, 0.25 * props.tip()) }) : null,
+        tr > 1e-3 ? g(
+          h2,
+          { op: tr },
+          h2("polyline", { points: `${tp[0]},${plot.Y(plot.y0)} ${tp[0]},${tp[1]} ${plot.X(plot.x0)},${tp[1]}`, fill: "none", stroke: P.muted, strokeWidth: 3, strokeDasharray: "10 8" }),
+          circle(h2, tp[0], tp[1], 22, 22, { fill: hexCol, stroke: P.ink, lw: 2.5 }),
+          text(h2, `${ty.toFixed(dec)}${unit}`, tp[0] + 22, tp[1] - 26, { size: 26, weight: 800, fill: hexCol, family: SANS, align: "l" })
+        ) : null
       );
     },
     box: () => {
@@ -2577,10 +3147,21 @@ function makeCurve(o) {
       start: () => at(0),
       end: () => at(1),
       pen: () => at(props.draw()),
+      dot: () => {
+        const tx = Math.max(plot.x0, Math.min(plot.x1, props.tx()));
+        return [plot.X(tx), plot.Y(yc(f3(tx)))];
+      },
       ...fn === "hill" ? { ec50: () => [plot.X(props.ec50()), plot.Y((props.emax() + props.e0()) / 2)], top: () => at(1) } : {}
     },
-    pointFn: (name, arg) => name === "x" || name === "t" ? [plot.X(arg), plot.Y(yc(f2(arg)))] : null,
-    _toU: toU
+    pointFn: (name, arg) => name === "x" || name === "t" ? [plot.X(arg), plot.Y(yc(f3(arg)))] : null,
+    _toU: toU,
+    /** the curve's value at the pen (for numbers that follow it) */
+    _value: (t) => {
+      const u = props.draw.at(t);
+      const x = fx(u);
+      return f3(x);
+    },
+    _dotValue: (t) => f3(Math.max(plot.x0, Math.min(plot.x1, props.tx.at(t))))
   };
 }
 function makeNumber(o, card) {
@@ -2663,7 +3244,7 @@ function makeObj(type, name, line_, ctx2, parent) {
     "bottom-left": () => [b().cx - b().w / 2, b().cy + b().h / 2],
     "bottom-right": () => [b().cx + b().w / 2, b().cy + b().h / 2]
   };
-  for (const [k, f2] of Object.entries(std)) if (!base.points[k]) base.points[k] = f2;
+  for (const [k, f3] of Object.entries(std)) if (!base.points[k]) base.points[k] = f3;
   return base;
 }
 function hash(s) {
@@ -2735,8 +3316,8 @@ function drawObj(h2, o) {
     {},
     hl > 1e-3 ? line(h2, [[bx.cx - bx.w / 2 + 2, bx.cy + 3], [bx.cx - bx.w / 2 + 2 + (bx.w - 4) * hl, bx.cy + 3]], { stroke: P.hl, w: Math.max(20, Math.min(bx.h * 0.7, 80)), op: 0.62 * d.hl.op() }) : null,
     (() => {
-      const ik = o.ink();
-      return ik >= 0.999 ? o.draw(h2) : ik <= 1e-3 ? null : inkTree(o.draw(h2), ik);
+      const ik2 = o.ink();
+      return ik2 >= 0.999 ? o.draw(h2) : ik2 <= 1e-3 ? null : inkTree(o.draw(h2), ik2);
     })(),
     kids.map((k) => drawObj(h2, k)),
     ul > 1e-3 ? line(h2, [[bx.cx - bx.w / 2, bx.cy + bx.h / 2 + 6], [bx.cx + bx.w / 2, bx.cy + bx.h / 2 + 2]], { stroke: P.pen, w: 5, cap: "round", end: ul, op: d.ul.op() }) : null,
@@ -2862,7 +3443,7 @@ function clocks(beats, timings) {
       const s0 = tm.speech_start ?? 0, s1 = tm.speech_end ?? tm.duration;
       const len = b.length ?? tm.duration + (b.extra ?? 0);
       out.push({ id: b.id, start: t, length: len, speechEnd: s1, audio: true, words: tm.words.map(([w, s]) => ({ w: w.trim(), t: s })), cue: (words) => {
-        const i = find(flat2.map((f2) => f2.w), words, true);
+        const i = find(flat2.map((f3) => f3.w), words, true);
         if (i >= 0) return { t: flat2[i].s, heard: true };
         const j = find(script, words, false);
         if (j < 0) return null;
@@ -2906,9 +3487,10 @@ var PAGE_SIZES = {
 };
 var D = (c, dflt) => c.line.opts.in !== void 0 ? dur(c.line.opts.in) : c.line.opts.for !== void 0 ? dur(c.line.opts.for) : dflt;
 var E = (c, dflt) => ease(c.line.opts.ease, dflt);
-var each = (c, f2) => {
+var each = (c, f3) => {
   if (!c.targets.length) throw new Error(`"${c.line.verb}" needs something to act on, like: ${c.line.verb} ap`);
-  return Math.max(c.start, ...c.targets.map((o) => f2(o)(c.start)));
+  const st = c.line.opts.stagger !== void 0 ? c.line.opts.stagger ? dur(c.line.opts.stagger) : 0.12 : 0;
+  return Math.max(c.start, ...c.targets.map((o, i) => f3(o)(c.start + i * st)));
 };
 var scaleAt = (o, t) => o.s.at(t);
 function appear(o, how, c) {
@@ -3052,6 +3634,11 @@ verb("label", "Attention", 'a label with a pointer to a point: label ap.peak "+5
   o.box = () => ({ cx: tx, cy: ty, w: Math.max(60, words.length * size * 0.55), h: size * 1.3 });
   o.x.set(p[0])(0);
   o.y.set(p[1])(0);
+  if (c.line.opts.follow !== void 0 && c.b.env.live) {
+    const lv = c.b.env.live(where);
+    o.x.follow((t) => lv(t)[0]);
+    o.y.follow((t) => lv(t)[1]);
+  }
   return chain((s) => Math.max(o.y.set(p[1] + 14)(s), o.op.to(1, T.in, easeOutCubic)(s), o.y.to(p[1], T.in, easeOutCubic)(s)), lead.to(1, 0.4, easeInOutCubic))(c.start);
 });
 verb("to", "Change", "animate any property: to cell at=200,0 size=0.8 opacity=0.5 color=blue in=1s", "to cell at=200,0 size=0.8 in=1s", (c) => each(c, (o) => (s) => c.b.setProps(o, c.line.opts, s, D(c, T.move), E(c, easeInOutCubic))));
@@ -3087,20 +3674,32 @@ verb("fill", "Change", "drop values into a maths slot, highlighted as they land:
   Object.assign(slots, vals);
   return s + d + hold + 0.5;
 }));
-verb("travel", "Motion", 'move along points: travel n1 via="0,-100 0,100" to=0,240 in=1.5s', "travel n1 via=pore.top to=pore.bottom in=1.2s", (c) => each(c, (o) => (s) => {
+verb("travel", "Motion", 'move along points: travel n1 via="0,-100 0,100" to=0,240 in=1.5s (smooth: a curve through them; bend=0.3: one curve; turn: face the way it goes)', "travel n1 via=pore.top to=pore.bottom in=1.2s", (c) => each(c, (o) => (s) => {
   const t = s;
   const pts2 = [...c.line.opts.via ? points(c.line.opts.via, c.b.env) : [], ...c.line.opts.to ? [point(c.line.opts.to, c.b.env)] : [], ...c.line.opts.along ? points(c.line.opts.along, c.b.env) : []];
   if (!pts2.length) throw new Error('travel needs to=... (and optionally via="x,y x,y")');
-  const local = pts2.map((p) => toParent(o, p, t));
+  let local = pts2.map((p) => toParent(o, p, t));
   const from = [o.x.at(t), o.y.at(t)];
+  if (c.line.opts.smooth !== void 0 || c.line.opts.bend !== void 0) local = shapePts([from, ...local], c.line.opts, c.b.env).slice(1);
   const legs = [from, ...local];
+  const turn = c.line.opts.turn !== void 0;
   const L = legs.slice(1).map((p, i) => Math.hypot(p[0] - legs[i][0], p[1] - legs[i][1]));
   const total = L.reduce((a, b) => a + b, 0) || 1;
   const run = D(c, Math.max(0.6, total / 400));
-  if (local.length === 1) return Math.max(o.x.to(local[0][0], run, E(c, easeInOutCubic))(t), o.y.to(local[0][1], run, E(c, easeInOutCubic))(t));
+  const face = (i, at, d) => {
+    if (turn) {
+      const a = Math.atan2(legs[i + 1][1] - legs[i][1], legs[i + 1][0] - legs[i][0]) * 180 / Math.PI;
+      o.rot.to(a, Math.min(0.15, d), linear)(at);
+    }
+  };
+  if (local.length === 1) {
+    face(0, t, run);
+    return Math.max(o.x.to(local[0][0], run, E(c, easeInOutCubic))(t), o.y.to(local[0][1], run, E(c, easeInOutCubic))(t));
+  }
   let cur = t;
   local.forEach((p, i) => {
     const d = run * L[i] / total;
+    face(i, cur, d);
     Math.max(o.x.to(p[0], d, linear)(cur), o.y.to(p[1], d, linear)(cur));
     cur += d;
   });
@@ -3117,12 +3716,46 @@ verb("wait", "Motion", "wait before the next line: wait 1s", "wait 0.5s", (c) =>
   if (!w) throw new Error("write it like: wait 0.5s");
   return c.start + dur(w);
 });
-verb("camera", "Camera", "camera focus <thing or point> zoom=1.6  \xB7  camera pan to=x,y  \xB7  camera zoom 1.4  \xB7  camera reset", "camera focus ap.peak zoom=1.6", (c) => {
+verb("stop", "Loops", "end the loops on a thing: stop heart (stop alone ends every loop). Start one with: loop every=0.8s pulse heart", "stop heart", (c) => c.start);
+verb("cover", "Transitions", "a sheet of paper slides over the page (style=slide|tear|fade); change what is underneath, then uncover", "cover style=tear in=0.8s", (c) => c.b.cover(c, true));
+verb("uncover", "Transitions", "the sheet slides away, showing the new page", "uncover in=0.8s", (c) => c.b.cover(c, false));
+verb("enter", "Host", "the host slides up into the frame", "enter me", (c) => each(c, (o) => hostOf(o).enter(c.line.opts.in ? dur(c.line.opts.in) : 0.7)));
+verb("leave", "Host", "the host drops out of the frame", "leave me", (c) => each(c, (o) => hostOf(o).leave(c.line.opts.in ? dur(c.line.opts.in) : 0.5)));
+verb("pose", "Host", "the host strikes a pose: idle, wave, point, explain, think, idea, surprised, shrug, calculator, thumbsup (side=left|right)", "pose me point", (c) => each(c, (o) => {
+  const name = c.line.args.filter((a) => a.kind === "word").map((a) => a.text).find((w) => !c.b.objs.has(w));
+  const poses = ["idle", "wave", "point", "explain", "think", "idea", "surprised", "shrug", "calculator", "thumbsup"];
+  if (!name || !poses.includes(name)) throw new Error(`pose: use one of ${poses.join(", ")}`);
+  const side = c.line.opts.side ? c.line.opts.side.toLowerCase().startsWith("r") ? "r" : "l" : void 0;
+  return hostOf(o).pose(name, side, c.line.opts.in ? dur(c.line.opts.in) : 0.55);
+}));
+verb("talk", "Host", "the host's mouth moves, in the background (in= how long; default: to the beat's last word)", "talk me", (c) => each(c, (o) => (s) => {
+  hostOf(o).talk(c.line.opts.in ? dur(c.line.opts.in) : Math.max(0.5, c.b.speechEnd - s))(s);
+  return s;
+}));
+verb("look", "Host", "the host's eyes turn to a thing or point", "look me at=ap.peak", (c) => each(c, (o) => {
+  const p = point(c.line.opts.at ?? c.line.opts.to ?? "0,0", c.b.env);
+  const me = toStage(o, [0, -400], c.start);
+  const dx = p[0] - me[0], dy = p[1] - me[1], L = Math.hypot(dx, dy) || 1;
+  return hostOf(o).look(dx / L, dy / L);
+}));
+verb("camera", "Camera", "camera focus <thing or point> zoom=1.6  \xB7  camera follow <thing> zoom=1.5 (keeps it centred while it moves; camera stop or reset ends it)  \xB7  camera pan to=x,y  \xB7  camera zoom 1.4  \xB7  camera reset", "camera focus ap.peak zoom=1.6", (c) => {
   const sub = (c.line.args[0]?.text ?? "").toLowerCase();
   const cam = c.b.cam, t = c.start, run = D(c, T.cam);
   const zNow = cam.node.s.at(t);
   const centre = () => [-cam.node.x.at(t) / zNow, -cam.node.y.at(t) / zNow];
-  if (sub === "reset") return cam.reset(run)(t);
+  if (sub === "reset" || sub === "stop") {
+    c.b.endFollow(t);
+    return sub === "reset" ? cam.reset(run)(t) : t;
+  }
+  if (sub === "follow") {
+    const what = c.line.args[1]?.text ?? c.line.opts.on;
+    if (!what || !c.b.env.live) throw new Error("camera follow needs a thing, like: camera follow n1 zoom=1.5");
+    const z = c.line.opts.zoom ? num(c.line.opts.zoom, c.b.env) : Math.max(zNow, 1.4);
+    c.b.endFollow(t);
+    c.b.camFollow = { start: t, live: c.b.env.live(what), blend: run };
+    cam.node.s.to(z, run)(t);
+    return t + run;
+  }
   if (sub === "focus" || sub === "frame") {
     const what = c.line.args[1]?.text ?? c.line.opts.on;
     if (!what) throw new Error("camera focus needs a thing or a point, like: camera focus ap.peak");
@@ -3131,8 +3764,20 @@ verb("camera", "Camera", "camera focus <thing or point> zoom=1.6  \xB7  camera p
   }
   if (sub === "pan") return cam.frame(point(c.line.opts.to ?? c.line.args[1]?.text ?? "0,0", c.b.env), zNow, run)(t);
   if (sub === "zoom") return cam.frame(centre(), num(c.line.args[1]?.text ?? c.line.opts.to ?? "1", c.b.env), run)(t);
-  throw new Error("camera: use focus, pan, zoom or reset");
+  throw new Error("camera: use focus, follow, pan, zoom, stop or reset");
 });
+var rectFill = (h2, W, Ht, op) => g(h2, { op }, rect(h2, 0, 0, W + 80, Ht + 80, { fill: P.paper }), gridLines(h2, W, Ht));
+function gridLines(h2, W, Ht) {
+  const ls = [];
+  for (let x = -Math.ceil(W / 48) * 24; x <= W / 2 + 24; x += 24) ls.push(h2("line", { key: "x" + x, x1: x, y1: -Ht / 2 - 30, x2: x, y2: Ht / 2 + 30, stroke: "rgba(110,130,160,0.13)", strokeWidth: 1.2 }));
+  for (let y = -Math.ceil(Ht / 48) * 24; y <= Ht / 2 + 24; y += 24) ls.push(h2("line", { key: "y" + y, x1: -W / 2 - 30, y1: y, x2: W / 2 + 30, y2: y, stroke: "rgba(110,130,160,0.13)", strokeWidth: 1.2 }));
+  return g(h2, {}, ls);
+}
+var hostOf = (o) => {
+  const hst = o._host;
+  if (!hst) throw new Error(`"${o.name}" isn't the host (add host me)`);
+  return hst;
+};
 var Builder = class {
   objs = /* @__PURE__ */ new Map();
   cam = makeCamera();
@@ -3141,6 +3786,57 @@ var Builder = class {
   labels = 0;
   t = 0;
   // the script time of the line being built (points are read here)
+  page = { w: 1920, h: 1080 };
+  speechEnd = 0;
+  coverObj = null;
+  /** the page-turn sheet: progress 0 (off to the right) .. 1 (covering) .. 2 (gone off to the left) */
+  cover(c, on) {
+    const style = (c.line.opts.style ?? "slide").toLowerCase();
+    if (!this.coverObj) {
+      const o2 = this.addObj("group", "page__cover", c.line.n, "", {}, null);
+      o2.type = "cover";
+      o2.fixed = true;
+      o2.layer = 1e4;
+      const pr2 = sig(0);
+      o2.props = { p: pr2 };
+      o2._style = style;
+      const W = () => this.page.w, H = () => this.page.h;
+      const edge = [];
+      const r = prng(97);
+      for (let i = 0; i <= 40; i++) edge.push([(r() - 0.5) * 26, -H() / 2 - 20 + i / 40 * (H() + 40)]);
+      o2.draw = (h2) => {
+        const p = pr2(), st = o2._style;
+        if (p <= 1e-3 || p >= 1.999) return null;
+        if (st === "fade") return rectFill(h2, W(), H(), p <= 1 ? p : 2 - p);
+        const x = W() * (1 - p);
+        const torn = st === "tear";
+        return g(
+          h2,
+          { x },
+          torn ? line(h2, [[-W() / 2, -H() / 2 - 20], ...edge.map(([ex, ey]) => [-W() / 2 + ex, ey]), [-W() / 2, H() / 2 + 20], [W() / 2 + 40, H() / 2 + 20], [W() / 2 + 40, -H() / 2 - 20]], { closed: true, fill: P.paper, shadow: true }) : rect(h2, 20, 0, W() + 40, H() + 40, { fill: P.paper }),
+          gridLines(h2, W(), H()),
+          !torn ? line(h2, [[-W() / 2, -H() / 2 - 20], [-W() / 2, H() / 2 + 20]], { stroke: "rgba(35,33,30,0.18)", w: 10 }) : null
+        );
+      };
+      o2.op.set(1)(0);
+    }
+    const o = this.coverObj ?? this.objs.get("page__cover");
+    this.coverObj = o;
+    o._style = style;
+    const pr = o.props.p, run = c.line.opts.in ? dur(c.line.opts.in) : 0.8;
+    if (on) return chain(pr.set(0), pr.to(1, run, easeInOutCubic))(c.start);
+    return chain(pr.set(1), pr.to(2, run, easeInOutCubic))(c.start);
+  }
+  camFollow = null;
+  /** finish a camera follow at time t: the camera keeps the thing centred from its start until t */
+  endFollow(t) {
+    const f3 = this.camFollow;
+    if (!f3) return;
+    this.camFollow = null;
+    const node2 = this.cam.node;
+    node2.x.followDuring((tt) => -f3.live(tt)[0] * node2.s.at(tt), f3.start, t, f3.blend);
+    node2.y.followDuring((tt) => -f3.live(tt)[1] * node2.s.at(tt), f3.start, t, f3.blend);
+  }
   constructor(seed = 1) {
     const r = prng(seed);
     this.env = {
@@ -3156,6 +3852,28 @@ var Builder = class {
         else if (o.points[m[2]]) p = o.points[m[2]]();
         if (!p) throw new Error(`"${m[1]}" has no point "${m[2]}". It has: ${Object.keys(o.points).join(", ")}`);
         return toStage(o, p, this.t);
+      },
+      live: (src) => {
+        const m = /^([A-Za-z_][\w-]*)(?:\.([\w-]+)(?:\(([^)]*)\))?)?\s*(?:([+\-])\s*(.+))?$/.exec(src.trim());
+        const o = m ? this.objs.get(m[1]) : void 0;
+        if (!m || !o) {
+          const fixed = point(src, this.env);
+          return () => fixed;
+        }
+        const name = m[2] ?? "centre", arg = m[3] !== void 0 ? num(m[3], this.env) : void 0;
+        if (arg === void 0 && !o.points[name]) throw new Error(`"${m[1]}" has no point "${name}". It has: ${Object.keys(o.points).join(", ")}`);
+        let dx = 0, dy = 0;
+        if (m[4]) {
+          const q = point(m[5], this.env);
+          const k = m[4] === "-" ? -1 : 1;
+          dx = k * q[0];
+          dy = k * q[1];
+        }
+        return (t) => {
+          const p = arg !== void 0 && o.pointFn ? o.pointFn(name, arg) ?? [0, 0] : o.points[name]();
+          const q = toStage(o, p, t);
+          return [q[0] + dx, q[1] + dy];
+        };
       }
     };
   }
@@ -3271,6 +3989,15 @@ function buildMic(source, timings, o = {}) {
   const lines = [];
   let beat = null;
   let prevStart = 0, prevEnd = 0, maxEnd = 0;
+  const loops = [];
+  const materialize = (lp, until) => {
+    let t = lp.start, i = 0;
+    while (t < until - 1e-6 && i++ < 3e3) {
+      b.t = t;
+      const e = exec(lp.line, t, lp.n);
+      t = lp.every > 0 ? t + lp.every : Math.max(e, t + 0.05);
+    }
+  };
   const runLine = (l, nForErrors) => {
     let start;
     const bs = beat ? beat.start : 0;
@@ -3307,6 +4034,16 @@ function buildMic(source, timings, o = {}) {
     let end = start;
     const reps = l.repeat ? l.repeat.n : 1;
     let s = start;
+    if (l.loop) {
+      const inner = { ...l, loop: void 0, repeat: void 0 };
+      b.t = start;
+      const first = exec(inner, start, nForErrors);
+      loops.push({ line: inner, n: nForErrors, start: l.loop.every > 0 ? start + l.loop.every : Math.max(first, start + 0.05), every: l.loop.every, names: inner.args.filter((a) => a.kind === "word").map((a) => a.text) });
+      lines.push({ line: nForErrors, beat: beat?.id ?? null, start, end: first, bg: true });
+      prevStart = start;
+      prevEnd = start;
+      return;
+    }
     for (let r = 0; r < reps; r++) {
       b.t = s;
       const e = exec(l, s, nForErrors);
@@ -3330,7 +4067,12 @@ function buildMic(source, timings, o = {}) {
         l.opts[a.text.toLowerCase()] = l.opts[a.text.toLowerCase()] ?? "";
         continue;
       }
+      if (/^(follow|head|arrow|smooth|turn|straight)$/i.test(a.text)) {
+        l.opts[a.text.toLowerCase()] = "";
+        continue;
+      }
       if (l.verb === "label" || l.verb === "camera" || l.verb === "wait") continue;
+      if (l.verb === "pose" && !b.objs.has(a.text)) continue;
       let ob = b.objs.get(a.text);
       if (!ob && a.text.includes(".")) {
         const [i0, c0] = a.text.split(".");
@@ -3346,6 +4088,18 @@ function buildMic(source, timings, o = {}) {
   };
   const exec = (l, s, n2) => {
     if (l.verb === "add") return doAdd(l, s, n2);
+    if (l.verb === "stop") {
+      const names = l.args.filter((a) => a.kind === "word").map((a) => a.text);
+      for (const nm of names) if (!b.objs.has(nm)) {
+        const near = closest(nm, [...b.objs.keys()]);
+        throw new Error(`no object called "${nm}"${near ? `. Did you mean ${near}?` : ""}`);
+      }
+      for (const lp of [...loops]) if (!names.length || lp.names.some((x) => names.includes(x))) {
+        materialize(lp, s);
+        loops.splice(loops.indexOf(lp), 1);
+      }
+      return s;
+    }
     const mac = defines[l.verb];
     if (mac) {
       const args = l.args.map((a) => a.text);
@@ -3463,6 +4217,35 @@ function buildMic(source, timings, o = {}) {
     }
     return appear(inst, how, { line: { ...l, opts: opts.in ? { in: opts.in } : {} }, targets: [inst], start: s, b })(s);
   };
+  const wireZoom = (ob, opts) => {
+    if (!opts.of || !b.env.live) throw new Error("a zoom needs of=<point>, like of=cell.right");
+    const src = b.env.live(opts.of);
+    const ring = opts.ring !== void 0 || true;
+    if (opts.layer === void 0) ob.layer = 50;
+    let k2 = 0;
+    ob.draw = (h2) => {
+      const t = now(), p = src(t), r = ob.props.r(), k = ob.props.mag();
+      const me = [ob.x(), ob.y()], ms = ob.s() || 1;
+      const sp = [(p[0] - me[0]) / ms, (p[1] - me[1]) / ms];
+      const id = `mic-zoom-${ob.seed}-${k2 = (k2 + 1) % 1e6}`;
+      const others = b.roots().filter((x) => x !== ob && x.type !== "zoom" && !x.fixed).sort((a, c2) => a.layer - c2.layer || a.order - c2.order);
+      const L = Math.hypot(sp[0], sp[1]) || 1, ux = sp[0] / L, uy = sp[1] / L, rs = r / k;
+      return g(
+        h2,
+        {},
+        ring ? circle(h2, sp[0], sp[1], 2 * rs, 2 * rs, { stroke: P.ink, lw: 3 / ms }) : null,
+        ring ? line(h2, [[sp[0] - ux * rs, sp[1] - uy * rs], [ux * r, uy * r]], { stroke: P.ink, w: 2.5 / ms, dash: "8 6" }) : null,
+        h2("clipPath", { id }, h2("circle", { cx: 0, cy: 0, r })),
+        h2(
+          "g",
+          { clipPath: `url(#${id})` },
+          rect(h2, 0, 0, 2 * r + 4, 2 * r + 4, { fill: P.paper }),
+          h2("g", { transform: `scale(${k / ms}) translate(${-p[0]} ${-p[1]})` }, others.map((x) => drawObj(h2, x)))
+        ),
+        circle(h2, 0, 0, 2 * r, 2 * r, { stroke: P.ink, lw: 5, fill: "none" })
+      );
+    };
+  };
   const doAdd = (l, s, n2, mctx) => {
     const words = l.args.filter((a) => a.kind === "word").map((a) => a.text);
     let type = (words[0] ?? "").toLowerCase();
@@ -3497,7 +4280,7 @@ function buildMic(source, timings, o = {}) {
       }
     }
     const flags = words.slice(2).map((w) => w.toLowerCase());
-    for (const f2 of flags) opts[f2] = opts[f2] ?? "";
+    for (const f3 of flags) opts[f3] = opts[f3] ?? "";
     if (!name) name = `${type}${b.objs.size + 1}`;
     if (!/^[A-Za-z_][\w-]*$/.test(name)) throw new Error(`"${name}" can't be a name: use letters, digits, - and _ (start with a letter)`);
     const txt = l.args.find((a) => a.kind === "str")?.text ?? opts.text ?? "";
@@ -3539,6 +4322,23 @@ function buildMic(source, timings, o = {}) {
       delete opts.opacity;
     }
     if (opts.fixed !== void 0) ob.fixed = true;
+    if (opts.follow && ob.props.value) {
+      const [tn, pn] = opts.follow.split(".");
+      const src = b.objs.get(tn);
+      if (!src) throw new Error(`follow: no object called "${tn}"`);
+      let fn;
+      if (!pn && src.type === "trace") {
+        const tr = src._trace;
+        fn = (t) => tr.v(src.props.draw.at(t));
+      } else if (!pn && src.type === "curve") fn = src._value;
+      else if (pn === "dot" && src.type === "curve") fn = src._dotValue;
+      else if (pn && src.props[pn]) {
+        const sg = src.props[pn];
+        fn = (t) => sg.at(t);
+      } else throw new Error(`follow: "${opts.follow}" isn't something a number can follow (a trace, a curve, curve.dot, or thing.number like ago.ec50)`);
+      ob.props.value.follow(fn);
+    }
+    if (type === "zoom") wireZoom(ob, opts);
     const startOpts = {};
     for (const k of ["at", "x", "y", "size", "scale", "sx", "sy", "stretchx", "stretchy", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
     if (!["shape", "plot"].includes(type)) {
@@ -3574,6 +4374,7 @@ function buildMic(source, timings, o = {}) {
             if (page.w > 3840 || page.h > 3840 || page.w < 240 || page.h < 240) throw new Error("page size: between 240 and 3840 on each side");
           } else throw new Error(`page size: use ${Object.keys(PAGE_SIZES).join(", ")}, or WIDTHxHEIGHT like 1080x1920`);
           if (page.w % 2 || page.h % 2) throw new Error("page size: use even numbers (video needs them)");
+          b.page = { w: page.w, h: page.h };
         }
         const bg = (o2.background ?? o2.bg ?? "").trim();
         if (bg) {
@@ -3599,6 +4400,7 @@ function buildMic(source, timings, o = {}) {
       }
       if (it.kind === "beat") {
         beat = clockOf.get(it.beat.id);
+        b.speechEnd = beat.start + beat.speechEnd;
         prevEnd = Math.max(prevEnd, beat.start);
         prevStart = prevEnd;
       } else if (it.kind === "let") {
@@ -3613,6 +4415,17 @@ function buildMic(source, timings, o = {}) {
     }
   }
   const lastBeatEnd = cl.length ? cl[cl.length - 1].start + cl[cl.length - 1].length : 0;
+  {
+    const until = Math.max(lastBeatEnd, maxEnd);
+    for (const lp of loops) {
+      try {
+        materialize(lp, until);
+      } catch (e) {
+        errors.push({ line: lp.n, msg: e.message ?? String(e) });
+      }
+    }
+    b.endFollow(until + 1);
+  }
   const audio = cl.length > 0 && cl.every((c) => c.audio);
   const seconds = Math.max(1 / 30, audio ? lastBeatEnd : Math.max(lastBeatEnd, maxEnd, getLastEnd()));
   const cam = b.cam;
@@ -3670,14 +4483,14 @@ function micBeatScenes(r, prefix = "mic") {
 // src/mic/films.ts
 var slug = (s) => s.replace(/\.mic$/i, "").replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "scene";
 function films(files, timings, library) {
-  return [...files].sort((a, b) => a.name.localeCompare(b.name)).map((f2) => {
-    const result = buildMic(f2.src, timings, { id: slug(f2.name), library });
-    const beats = micBeatScenes(result, slug(f2.name)).map((b, i) => ({
-      id: `${slug(f2.name)}-${String(i + 1).padStart(2, "0")}-${slug(b.beat)}`,
+  return [...files].sort((a, b) => a.name.localeCompare(b.name)).map((f3) => {
+    const result = buildMic(f3.src, timings, { id: slug(f3.name), library });
+    const beats = micBeatScenes(result, slug(f3.name)).map((b, i) => ({
+      id: `${slug(f3.name)}-${String(i + 1).padStart(2, "0")}-${slug(b.beat)}`,
       beat: b.beat,
       scene: b.scene
     }));
-    return { file: f2.name, result, beats };
+    return { file: f3.name, result, beats };
   });
 }
 
@@ -3686,8 +4499,8 @@ import { Fragment, jsx as jsx3 } from "react/jsx-runtime";
 var FPS = 30;
 function makeRoot(input) {
   const all2 = films(input.files, input.timings, input.library);
-  for (const f2 of all2) for (const e of f2.result.errors) console.error(`${f2.file} line ${e.line}: ${e.msg}`);
-  const byId = new Map(all2.flatMap((f2) => f2.beats.map((b) => [b.id, b.scene])));
+  for (const f3 of all2) for (const e of f3.result.errors) console.error(`${f3.file} line ${e.line}: ${e.msg}`);
+  const byId = new Map(all2.flatMap((f3) => f3.beats.map((b) => [b.id, b.scene])));
   const Comp = ({ id }) => /* @__PURE__ */ jsx3(SequenceView, { scenes: [byId.get(id)] });
   return () => /* @__PURE__ */ jsx3(Fragment, { children: [...byId.entries()].map(([id, sc]) => /* @__PURE__ */ jsx3(Composition, { id, component: Comp, defaultProps: { id }, durationInFrames: framesOf(sc, FPS), fps: FPS, width: sc.width ?? 1920, height: sc.height ?? 1080 }, id)) });
 }
