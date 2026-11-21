@@ -55,6 +55,16 @@
   .ghform { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 12px; margin: 6px 0 8px; font-size: 13px; }
   .ghform label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
   .ghform input { font: 13px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+  .snaps { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; margin-bottom: 8px; }
+  .snap { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  .snaps > button { align-self: flex-start; }
+  .narr { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; font-size: 13px; }
+  .narr .rt { width: auto; padding: 0 6px 0 0; font-weight: 600; }
+  .nw { padding: 2px 6px; font-size: 13px; border-radius: 5px; background: transparent; border-color: transparent; }
+  .nw:hover, .nw:active { background: #E8E2D4; border-color: var(--line); }
+  .subs { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%); max-width: 92%; padding: 3px 10px; border-radius: 6px;
+    background: rgba(35,33,30,.72); color: #F5F2EA; font: 600 clamp(11px, 1.6vw, 17px)/1.35 Inter, sans-serif; text-align: center; pointer-events: none; }
+  .subs .said { opacity: .65; } .subs .now { color: #FFD866; }
   .themebtn { margin-left: 6px; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }

@@ -2696,7 +2696,7 @@ function clocks(beats, timings2) {
         });
       }
       const s0 = tm.speech_start ?? 0, s1 = tm.speech_end ?? tm.duration;
-      out.push({ id: b.id, start: t, length: tm.duration, speechEnd: s1, audio: true, cue: (words) => {
+      out.push({ id: b.id, start: t, length: tm.duration, speechEnd: s1, audio: true, words: tm.words.map(([w, s]) => ({ w: w.trim(), t: s })), cue: (words) => {
         const i = find(flat2.map((f2) => f2.w), words, true);
         if (i >= 0) return { t: flat2[i].s, heard: true };
         const j = find(script, words, false);
@@ -2707,7 +2707,13 @@ function clocks(beats, timings2) {
     } else {
       const speech = script.length / WPS + pause;
       const length = LEAD + speech + TAIL;
-      out.push({ id: b.id, start: t, length, speechEnd: LEAD + speech, audio: false, cue: (words) => {
+      const est = [];
+      let k = 0;
+      for (const w of b.text.replace(/\[[^\]]*\]/g, " ").split(/\s+/).filter(Boolean)) {
+        est.push({ w, t: LEAD + k / WPS });
+        k += Math.max(1, toks(w).length);
+      }
+      out.push({ id: b.id, start: t, length, speechEnd: LEAD + speech, audio: false, words: est, cue: (words) => {
         const j = find(script, words, false);
         return j < 0 ? null : { t: LEAD + j / WPS, heard: true };
       } });
@@ -3378,7 +3384,7 @@ function buildMic(source, timings2, o = {}) {
     late: lines.filter((x) => x.late).map((x) => [`line ${x.line}`, x.late]),
     lastTween: getLastEnd()
   };
-  const beats = cl.map((c) => ({ id: c.id, start: c.start, length: c.length, audio: c.audio, line: beatHeads.find((x) => x.id === c.id).n, text: beatHeads.find((x) => x.id === c.id).text }));
+  const beats = cl.map((c) => ({ id: c.id, start: c.start, length: c.length, audio: c.audio, words: c.words, line: beatHeads.find((x) => x.id === c.id).n, text: beatHeads.find((x) => x.id === c.id).text }));
   const hit = (x, y, t) => {
     const out = [];
     for (const ob of b.objs.values()) {
