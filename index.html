@@ -65,6 +65,13 @@
   .subs { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%); max-width: 92%; padding: 3px 10px; border-radius: 6px;
     background: rgba(35,33,30,.72); color: #F5F2EA; font: 600 clamp(11px, 1.6vw, 17px)/1.35 Inter, sans-serif; text-align: center; pointer-events: none; }
   .subs .said { opacity: .65; } .subs .now { color: #FFD866; }
+  .filetabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+  .pname { color: var(--muted); margin-right: 2px; }
+  .ftab { display: inline-flex; align-items: center; }
+  .ftab > button:first-child { font: 13px ui-monospace, Menlo, monospace; padding: 4px 9px; }
+  .ftab.on > button:first-child { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .fx { padding: 2px 7px; margin-left: 2px; font-size: 13px; }
+  .fadd { padding: 3px 10px; font-weight: 700; }
   .themebtn { margin-left: 6px; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
