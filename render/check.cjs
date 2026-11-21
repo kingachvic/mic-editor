@@ -1440,6 +1440,17 @@ function capsule(h) {
 function tablet(h) {
   return g(h, {}, circle(h, 0, 6, 150, 150, { fill: "#E4DED3", stroke: P.ink, lw: 3 }), circle(h, 0, 0, 150, 150, { fill: "#FBF8F2", stroke: P.ink, lw: 3 }), line(h, [[-50, 0], [50, 0]], { stroke: rgbaHex(P.ink, 0.4), w: 4, cap: "round" }));
 }
+function electrode(h) {
+  const top = -150, tip = 190, w = (y) => 11 - 9.5 * ((y - top) / (tip - top));
+  return g(
+    h,
+    {},
+    line(h, [[-w(top), top], [-1.5, tip], [1.5, tip], [w(top), top]], { closed: true, fill: rgbaHex(P.volt, 0.12), stroke: P.ink, w: 2.5, join: "round" }),
+    line(h, [[0, top + 4], [0, tip - 8]], { stroke: rgbaHex(P.volt, 0.7), w: 2 }),
+    rect(h, 0, top - 22, 30, 44, { r: 4, fill: "#C7CDD2", stroke: P.ink, lw: 2.5 }),
+    line(h, [[0, top - 44], [0, -190]], { ...ink2(3), stroke: P.ink })
+  );
+}
 function syringe(h) {
   return g(
     h,
@@ -1574,6 +1585,7 @@ var ASSETS = [
   { id: "synapse", cat: "organs", desc: "synapse: terminal with vesicles, cleft, receptors", since: LIB, box: [-240, -300, 480, 560], draw: (h) => synapse(h) },
   { id: "neuron", cat: "organs", desc: "neuron (dendrites, soma, axon, terminals)", since: V1, box: [-300, -270, 1e3, 520], draw: (h) => neuronEl(h) },
   { id: "axon-cylinder", cat: "organs", desc: "axon as a cutaway cylinder (squid giant axon)", since: V1, box: [-490, -110, 980, 220], draw: (h) => fibreEl(h, 900, 170) },
+  { id: "electrode", cat: "organs", desc: "glass microelectrode (tip at the bottom: .bottom); pair it with a readout", since: V2, box: [-20, -192, 40, 384], tags: ["probe", "micropipette", "measure", "voltage"], draw: (h) => electrode(h) },
   { id: "squid", cat: "organs", desc: "squid with its giant axon", since: V1, box: [-420, -240, 840, 480], draw: (h) => squidEl(h, 0) },
   { id: "myocyte", cat: "organs", desc: "cardiac muscle cell (capsule, striations, nucleus)", since: V1, box: [-140, -50, 280, 100], draw: (h) => myocyteEl(h) },
   { id: "red-blood-cell", cat: "organs", desc: "red blood cell", since: V1, box: [-60, -60, 120, 120], draw: (h) => rbcEl(h) },
