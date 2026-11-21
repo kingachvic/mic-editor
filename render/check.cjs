@@ -1,4 +1,26 @@
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
 // src/paper/timeline.ts
 var linear = (v) => v;
@@ -654,6 +676,9 @@ function parse(source) {
   }
   return out;
 }
+
+// src/mic/objects.ts
+var import_react = __toESM(require("react"));
 
 // src/paper/math.ts
 var MATH_FONT = '"Latin Modern Roman", "Latin Modern Math"';
@@ -2517,6 +2542,9 @@ function makeObj(type, name, line_, ctx2, parent) {
     flip: 1,
     sx: sig(1),
     sy: sig(1),
+    wipe: sig(1),
+    wipeDir: "left",
+    ink: sig(1),
     color: csig(P.ink),
     layer: 0,
     parent,
@@ -2581,6 +2609,27 @@ function toParent(o, p, t) {
   }
   return [x, y];
 }
+var SHAPES = /* @__PURE__ */ new Set(["path", "line", "polyline", "polygon", "circle", "ellipse", "rect"]);
+function inkTree(el, k) {
+  if (Array.isArray(el)) return el.map((e2) => inkTree(e2, k));
+  if (!import_react.default.isValidElement(el)) return el;
+  const e = el;
+  const pr = e.props ?? {};
+  const kids = pr.children !== void 0 ? import_react.default.Children.map(pr.children, (c) => inkTree(c, k)) : void 0;
+  const fillK = Math.max(0, Math.min(1, (k - 0.55) / 0.45));
+  if (SHAPES.has(e.type)) {
+    const strokeK = Math.min(1, k / 0.7);
+    const hasStroke = pr.stroke && pr.stroke !== "none";
+    return import_react.default.cloneElement(e, {
+      ...hasStroke ? { pathLength: 1, strokeDasharray: "1 1", strokeDashoffset: 1 - strokeK } : {},
+      fillOpacity: (pr.fillOpacity ?? 1) * (hasStroke ? fillK : Math.min(1, k * 1.4))
+    }, kids);
+  }
+  if (e.type === "text") return import_react.default.cloneElement(e, { opacity: (pr.opacity ?? 1) * fillK }, kids);
+  if (pr.dangerouslySetInnerHTML) return import_react.default.cloneElement(e, { opacity: k });
+  return kids !== void 0 ? import_react.default.cloneElement(e, {}, kids) : e;
+}
+var clipN = 0;
 var penCache = /* @__PURE__ */ new Map();
 function drawObj(h, o) {
   const op = o.op() * o.dim();
@@ -2596,7 +2645,10 @@ function drawObj(h, o) {
     h,
     {},
     hl > 1e-3 ? line(h, [[bx.cx - bx.w / 2 + 2, bx.cy + 3], [bx.cx - bx.w / 2 + 2 + (bx.w - 4) * hl, bx.cy + 3]], { stroke: P.hl, w: Math.max(20, Math.min(bx.h * 0.7, 80)), op: 0.62 * d.hl.op() }) : null,
-    o.draw(h),
+    (() => {
+      const ik = o.ink();
+      return ik >= 0.999 ? o.draw(h) : ik <= 1e-3 ? null : inkTree(o.draw(h), ik);
+    })(),
     kids.map((k) => drawObj(h, k)),
     ul > 1e-3 ? line(h, [[bx.cx - bx.w / 2, bx.cy + bx.h / 2 + 6], [bx.cx + bx.w / 2, bx.cy + bx.h / 2 + 2]], { stroke: P.pen, w: 5, cap: "round", end: ul, op: d.ul.op() }) : null,
     st > 1e-3 ? line(h, [[bx.cx - bx.w / 2 - 6, bx.cy + 2], [bx.cx + bx.w / 2 + 6, bx.cy - 2]], { stroke: P.pen, w: 6, cap: "round", end: st, op: d.strike.op() }) : null,
@@ -2613,11 +2665,21 @@ function drawObj(h, o) {
       return line(h, pts2.map(([a, b]) => [a + bx.cx, b + bx.cy]), { stroke: P.pen, w: 4, cap: "round", join: "round", end: pe, op: d.pen.op() });
     })() : null
   );
+  const wp = o.wipe();
+  let shown = inner;
+  if (wp < 0.999) {
+    if (wp <= 1e-3) return null;
+    const pad = 30, x0 = bx.cx - bx.w / 2 - pad, y0 = bx.cy - bx.h / 2 - pad, W = bx.w + 2 * pad, H = bx.h + 2 * pad;
+    const dir2 = o.wipeDir;
+    const r = dir2 === "right" ? { x: x0 + W * (1 - wp), y: y0, width: W * wp, height: H } : dir2 === "top" ? { x: x0, y: y0, width: W, height: H * wp } : dir2 === "bottom" ? { x: x0, y: y0 + H * (1 - wp), width: W, height: H * wp } : { x: x0, y: y0, width: W * wp, height: H };
+    const id = `mic-wipe-${o.seed}-${clipN = (clipN + 1) % 1e6}`;
+    shown = h("g", {}, h("clipPath", { id }, h("rect", r)), h("g", { clipPath: `url(#${id})` }, inner));
+  }
   const sx = o.sx() * o.flip, sy = o.sy();
   return g(
     h,
     { x: o.x() + dx, y: o.y() + dy, rot: o.rot(), s: o.s(), op },
-    sx !== 1 || sy !== 1 ? h("g", { transform: `scale(${sx} ${sy})` }, inner) : inner
+    sx !== 1 || sy !== 1 ? h("g", { transform: `scale(${sx} ${sy})` }, shown) : shown
   );
 }
 
@@ -2825,10 +2887,16 @@ verb("draw", "Draw", "draw on a trace (to=peak), a curve (to=10, to=ec50; keep l
     const run = D(c, Math.max(0.5, Math.abs(u - from) * 1.6));
     return chain(o.props.draw.set(from), o.props.tip.to(1, 0.15), o.props.draw.to(Math.max(0, Math.min(1, u)), run, E(c, easeInOutSine)), c.line.opts.keep !== void 0 ? (x) => x : o.props.tip.to(0, 0.3))(s);
   }
-  if (o.props.end) return chain(o.props.end.set(0), o.props.end.to(1, D(c, 0.9), E(c, easeInOutCubic)))(s);
-  throw new Error(`"draw" works on a trace, line, arrow or shape; "${o.name}" is a ${o.type} (use show or grow)`);
+  if (o.props.end && o.type !== "shape") return chain(o.props.end.set(0), o.props.end.to(1, D(c, 0.9), E(c, easeInOutCubic)))(s);
+  return chain(o.ink.set(0), o.ink.to(1, D(c, 1.1), E(c, easeInOutSine)))(s);
 }));
-verb("erase", "Draw", "undraw a line, arrow or shape (a trace fades)", "erase a1", (c) => each(c, (o) => o.props.end ? o.props.end.to(0, D(c, 0.6), E(c, easeInOutCubic)) : o.op.to(0, D(c, T.out), easeInCubic)));
+verb("erase", "Draw", "undraw it (the pen in reverse; a trace fades)", "erase a1", (c) => each(c, (o) => o.type === "trace" ? o.op.to(0, D(c, T.out), easeInCubic) : o.props.end && o.type !== "shape" ? o.props.end.to(0, D(c, 0.6), E(c, easeInOutCubic)) : o.ink.to(0, D(c, 0.7), E(c, easeInOutSine))));
+verb("wipe", "Draw", "reveal it with a sweep from one side, like a highlighter or marker stroke: wipe hl from=left (also right, top, bottom); wipe x out hides it the same way", "wipe mark from=left in=0.4s", (c) => each(c, (o) => (s) => {
+  const out = c.line.args.some((a) => /^out$/i.test(a.text)) || c.line.opts.out !== void 0;
+  o.wipeDir = (c.line.opts.from ?? c.line.opts.out ?? "left").toLowerCase().replace(/^l.*/, "left").replace(/^r.*/, "right").replace(/^t.*/, "top").replace(/^b.*/, "bottom");
+  if (out) return o.wipe.to(0, D(c, 0.4), E(c, easeInOutCubic))(s);
+  return chain(o.op.set(o.op.at(s) > 1e-3 ? o.op.at(s) : 1), o.wipe.set(0), o.wipe.to(1, D(c, 0.45), E(c, easeOutCubic)))(s);
+}));
 verb("write", "Draw", "write text on letter by letter", "write q in=1.2s", (c) => each(c, (o) => {
   if (!o.chars) throw new Error(`"write" works on text; "${o.name}" is a ${o.type}`);
   return chain(o.op.set(1), o.chars.set(0), o.chars.to(1, D(c, 0.9), linear));
@@ -3042,6 +3110,16 @@ var Builder = class {
         case "widen":
           go(o.sx, num(v, this.env));
           break;
+        case "width": {
+          const bw = o.box().w * (o.s.at(s) || 1);
+          if (bw > 0.5) go(o.sx, num(v, this.env) / bw);
+          break;
+        }
+        case "height": {
+          const bh = o.box().h * (o.s.at(s) || 1);
+          if (bh > 0.5) go(o.sy, num(v, this.env) / bh);
+          break;
+        }
         case "sy":
         case "stretchy":
           go(o.sy, num(v, this.env));
@@ -3158,8 +3236,8 @@ function buildMic(source, timings2, o = {}) {
       if (a.kind !== "word") continue;
       if (/^(off|all|none|focus|frame|pan|zoom|reset)$/i.test(a.text) && (l.verb === "spotlight" || l.verb === "camera")) continue;
       if (/^[+\-]?\d/.test(a.text)) continue;
-      if (/^(keep)$/i.test(a.text)) {
-        l.opts[a.text.toLowerCase()] = "";
+      if (/^(keep|out)$/i.test(a.text)) {
+        l.opts[a.text.toLowerCase()] = l.opts[a.text.toLowerCase()] ?? "";
         continue;
       }
       if (l.verb === "label" || l.verb === "camera" || l.verb === "wait") continue;
@@ -3373,6 +3451,9 @@ function buildMic(source, timings2, o = {}) {
     if (opts.fixed !== void 0) ob.fixed = true;
     const startOpts = {};
     for (const k of ["at", "x", "y", "size", "scale", "sx", "sy", "stretchx", "stretchy", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
+    if (!["shape", "plot"].includes(type)) {
+      for (const k of ["width", "height"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
+    }
     b.t = s;
     b.setProps(ob, startOpts, 0, 0, linear);
     if (opts.layer !== void 0) ob.layer = num(opts.layer, b.env);
@@ -3385,7 +3466,7 @@ function buildMic(source, timings2, o = {}) {
       return s;
     }
     const fake = { line: { ...l, opts: { ...opts.in ? { in: opts.in } : {}, ...opts.opacity ? { opacity: opts.opacity } : {} } }, targets: [ob], start: s, b };
-    if (how === "draw" || how === "write") return VERBS[how].run(fake);
+    if (how === "draw" || how === "write" || how === "wipe") return VERBS[how].run(fake);
     return appear(ob, how, fake)(s);
   };
   const page = { w: 1920, h: 1080, background: P.paper, paper: true };
