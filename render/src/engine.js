@@ -3436,13 +3436,17 @@ function find(flat2, needle, fuzzy) {
   const first = flat2.map((w, i) => [w, i]).filter(([w]) => w.startsWith(want[0]));
   return first.length === 1 ? first[0][1] : -1;
 }
+function beatKey(id) {
+  const m = /^[sS]\s*(\d+)\s*[-_. ]?\s*[bB]\s*(\d+)$/.exec(id.trim());
+  return m ? `S${+m[1]}-B${+m[2]}` : id;
+}
 function clocks(beats, timings) {
   const out = [];
   let t = 0;
   for (const b of beats) {
     const script = toks(b.text.replace(/\[[^\]]*\]/g, " "));
     const pause = /\[pause\]/i.test(b.text) ? 1.2 : 0;
-    const tm = timings?.beats?.[b.id];
+    const tm = timings?.beats?.[b.id] ?? timings?.beats?.[beatKey(b.id)];
     if (tm) {
       const flat2 = [];
       for (const [w, s, e] of tm.words) {
@@ -3998,6 +4002,12 @@ function buildMic(source, timings, o = {}) {
   }
   const cl = clocks(beatHeads, timings);
   const clockOf = new Map(cl.map((c) => [c.id, c]));
+  if (timings?.beats) {
+    for (const c of cl) if (!c.audio) {
+      const head = beatHeads.find((h2) => h2.id === c.id);
+      warnings.push({ line: head?.n ?? 1, msg: `no recording of ${c.id} in voice_timings.json, so this beat is still estimated. Name its recording ${beatKey(c.id)} (like ${beatKey(c.id)}.wav) and run the Whisper notebook again, or check the beat ID.` });
+    }
+  }
   const lines = [];
   let beat = null;
   let prevStart = 0, prevEnd = 0, maxEnd = 0;
