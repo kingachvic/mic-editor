@@ -2622,6 +2622,8 @@ function makeObj(type, name, line_, ctx2, parent) {
     dim: sig(1),
     drift: sig(0),
     flip: 1,
+    sx: sig(1),
+    sy: sig(1),
     color: csig(P.ink),
     layer: 0,
     parent,
@@ -2663,8 +2665,8 @@ function toStage(o, p, t) {
   let [x, y] = p;
   for (let c = o; c; c = c.parent) {
     const s = c.s.at(t), r = c.rot.at(t) * Math.PI / 180;
-    x *= s * c.flip;
-    y *= s;
+    x *= s * c.flip * c.sx.at(t);
+    y *= s * c.sy.at(t);
     [x, y] = [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
     x += c.x.at(t);
     y += c.y.at(t);
@@ -2681,8 +2683,8 @@ function toParent(o, p, t) {
     const r = -c.rot.at(t) * Math.PI / 180;
     [x, y] = [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
     const s = c.s.at(t);
-    x /= s * c.flip;
-    y /= s;
+    x /= s * c.flip * c.sx.at(t);
+    y /= s * c.sy.at(t);
   }
   return [x, y];
 }
@@ -2718,10 +2720,11 @@ function drawObj(h2, o) {
       return line(h2, pts2.map(([a, b]) => [a + bx.cx, b + bx.cy]), { stroke: P.pen, w: 4, cap: "round", join: "round", end: pe, op: d.pen.op() });
     })() : null
   );
+  const sx = o.sx() * o.flip, sy = o.sy();
   return g(
     h2,
     { x: o.x() + dx, y: o.y() + dy, rot: o.rot(), s: o.s(), op },
-    o.flip === -1 ? h2("g", { transform: "scale(-1 1)" }, inner) : inner
+    sx !== 1 || sy !== 1 ? h2("g", { transform: `scale(${sx} ${sy})` }, inner) : inner
   );
 }
 
@@ -3141,6 +3144,15 @@ var Builder = class {
         case "scale":
           go(o.s, num(v, this.env));
           break;
+        case "sx":
+        case "stretchx":
+        case "widen":
+          go(o.sx, num(v, this.env));
+          break;
+        case "sy":
+        case "stretchy":
+          go(o.sy, num(v, this.env));
+          break;
         case "rotate":
         case "tilt":
         case "rot":
@@ -3162,7 +3174,7 @@ var Builder = class {
         default: {
           const p = o.props[k];
           if (!p) {
-            const names = ["at", "x", "y", "size", "rotate", "opacity", "color", "drift", "layer", ...Object.keys(o.props)];
+            const names = ["at", "x", "y", "size", "sx", "sy", "rotate", "opacity", "color", "drift", "layer", ...Object.keys(o.props)];
             const near = closest(k, names);
             throw new Error(`"${o.name}" (a ${o.type}) has no "${k}"${near ? `. Did you mean ${near}?` : `. It has: ${names.join(", ")}`}`);
           }
@@ -3379,7 +3391,7 @@ function buildMic(source, timings, o = {}) {
       inst.points[k] = k === "left" ? () => [bx().cx - bx().w / 2, bx().cy] : k === "right" ? () => [bx().cx + bx().w / 2, bx().cy] : k === "top" ? () => [bx().cx, bx().cy - bx().h / 2] : k === "bottom" ? () => [bx().cx, bx().cy + bx().h / 2] : () => [bx().cx, bx().cy];
     }
     const startOpts = {};
-    for (const k of ["at", "x", "y", "size", "scale", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
+    for (const k of ["at", "x", "y", "size", "scale", "sx", "sy", "stretchx", "stretchy", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
     b.t = s;
     b.setProps(inst, startOpts, 0, 0, linear);
     if (words.slice(2).some((w) => /^hidden$/i.test(w)) || opts.hidden !== void 0) return s;
@@ -3446,7 +3458,7 @@ function buildMic(source, timings, o = {}) {
       if (mctx) for (const k of Object.keys(mctx.params)) delete b.vars[k];
     }
     for (const [k, v] of bound) {
-      const base = { x: "x", y: "y", size: "s", scale: "s", rotate: "rot", tilt: "rot", rot: "rot", opacity: "op" };
+      const base = { x: "x", y: "y", size: "s", scale: "s", rotate: "rot", tilt: "rot", rot: "rot", opacity: "op", sx: "sx", sy: "sy", stretchx: "sx", stretchy: "sy" };
       if (k === "at") {
         const pr = splitPair(v);
         if (!pr) throw new Error(`at=${v}: write it as x,y`);
@@ -3467,7 +3479,7 @@ function buildMic(source, timings, o = {}) {
     }
     if (opts.fixed !== void 0) ob.fixed = true;
     const startOpts = {};
-    for (const k of ["at", "x", "y", "size", "scale", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
+    for (const k of ["at", "x", "y", "size", "scale", "sx", "sy", "stretchx", "stretchy", "rotate", "tilt", "layer", "drift"]) if (opts[k] !== void 0 && opts[k] !== "") startOpts[k] = opts[k];
     b.t = s;
     b.setProps(ob, startOpts, 0, 0, linear);
     if (opts.layer !== void 0) ob.layer = num(opts.layer, b.env);
