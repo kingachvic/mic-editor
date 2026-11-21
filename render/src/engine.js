@@ -652,7 +652,11 @@ function parse(source) {
         const t = tokenize(s);
         if (!t[1] || t[1].kind !== "word") throw new Error('a beat needs its ID, like: beat S1-B2 "the narration"');
         const text2 = t.filter((x) => x.kind === "str").map((x) => x.text).join(" ");
-        out.items.push({ kind: "beat", beat: { n: n2, id: t[1].text, text: text2 } });
+        const kv = Object.fromEntries(t.filter((x) => x.kind === "kv").map((x) => [x.key, x.text]));
+        for (const k of Object.keys(kv)) if (!["length", "extra"].includes(k)) throw new Error(`a beat takes length= (exactly this long) or extra= (time added after the words), not ${k}=`);
+        const length = kv.length !== void 0 ? dur(kv.length) : void 0, extra = kv.extra !== void 0 ? dur(kv.extra) : void 0;
+        if (length !== void 0 && (length <= 0 || length > 600)) throw new Error("length: between 0 and 600 seconds");
+        out.items.push({ kind: "beat", beat: { n: n2, id: t[1].text, text: text2, length, extra } });
         continue;
       }
       if (head === "page") {
@@ -2856,17 +2860,18 @@ function clocks(beats, timings) {
         });
       }
       const s0 = tm.speech_start ?? 0, s1 = tm.speech_end ?? tm.duration;
-      out.push({ id: b.id, start: t, length: tm.duration, speechEnd: s1, audio: true, words: tm.words.map(([w, s]) => ({ w: w.trim(), t: s })), cue: (words) => {
+      const len = b.length ?? tm.duration + (b.extra ?? 0);
+      out.push({ id: b.id, start: t, length: len, speechEnd: s1, audio: true, words: tm.words.map(([w, s]) => ({ w: w.trim(), t: s })), cue: (words) => {
         const i = find(flat2.map((f2) => f2.w), words, true);
         if (i >= 0) return { t: flat2[i].s, heard: true };
         const j = find(script, words, false);
         if (j < 0) return null;
         return { t: s0 + j / Math.max(1, script.length) * (s1 - s0), heard: false };
       } });
-      t += tm.duration;
+      t += len;
     } else {
       const speech = script.length / WPS + pause;
-      const length = LEAD + speech + TAIL;
+      const length = b.length ?? (script.length ? LEAD + speech + TAIL : 1.2) + (b.extra ?? 0);
       const est = [];
       let k = 0;
       for (const w of b.text.replace(/\[[^\]]*\]/g, " ").split(/\s+/).filter(Boolean)) {
