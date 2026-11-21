@@ -1,3 +1,24 @@
+// src/paper/assets.ts
+var IMAGES = ["portraits/bernstein.jpg", "portraits/skou.jpg"];
+var URL_OF = (p) => p;
+function setAssetUrl(f2) {
+  URL_OF = f2;
+}
+function preloadImages(url) {
+  return Promise.all(IMAGES.map((p) => new Promise((res) => {
+    const im = new Image();
+    im.onload = () => im.decode ? im.decode().then(() => res(), () => res()) : res();
+    im.onerror = () => {
+      console.error("could not load", p);
+      res();
+    };
+    im.src = url(p);
+  })));
+}
+
+// src/mic/no-portraits.ts
+IMAGES.length = 0;
+
 // src/mic/remotion-root.tsx
 import { Composition } from "remotion";
 
@@ -66,24 +87,6 @@ function resetLastEnd() {
 }
 function getLastEnd() {
   return lastEnd;
-}
-
-// src/paper/assets.ts
-var IMAGES = ["portraits/bernstein.jpg", "portraits/skou.jpg"];
-var URL_OF = (p) => p;
-function setAssetUrl(f2) {
-  URL_OF = f2;
-}
-function preloadImages(url) {
-  return Promise.all(IMAGES.map((p) => new Promise((res) => {
-    const im = new Image();
-    im.onload = () => im.decode ? im.decode().then(() => res(), () => res()) : res();
-    im.onerror = () => {
-      console.error("could not load", p);
-      res();
-    };
-    im.src = url(p);
-  })));
 }
 
 // src/paper/svg.ts
@@ -188,16 +191,21 @@ function defs(h2) {
 // src/paper/frame.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
 var h = React.createElement;
-var TILES = [];
-for (const ty of [-1, 0, 1]) for (const tx of [-1, 0, 1]) TILES.push([tx, ty]);
 function FrameView({ scene, t, Img: Img2, url }) {
   setAssetUrl(url);
   setNow(t + (scene.offset ?? 0));
   const cam = scene.camera?.node;
   const x = cam ? cam.x() : 0, y = cam ? cam.y() : 0, s = cam ? cam.s() : 1;
-  return /* @__PURE__ */ jsxs("div", { style: { position: "absolute", left: 0, top: 0, width: 1920, height: 1080, overflow: "hidden", background: scene.background }, children: [
-    /* @__PURE__ */ jsx("div", { style: { position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${960 + x}px, ${540 + y}px) scale(${s})` }, children: TILES.map(([tx, ty]) => /* @__PURE__ */ jsx(Img2, { src: url("paper.jpg"), style: { position: "absolute", left: tx * 1920 - 960, top: ty * 1080 - 540, width: 1920, height: 1080 } }, `${tx},${ty}`)) }),
-    /* @__PURE__ */ jsxs("svg", { width: 1920, height: 1080, viewBox: "-960 -540 1920 1080", style: { position: "absolute", left: 0, top: 0 }, children: [
+  const W = scene.width ?? 1920, H = scene.height ?? 1080;
+  const tiles = [];
+  if (scene.paper !== false && !scene.backImage) {
+    const nx = Math.ceil(W / 2 / (1920 * s) + 0.5), ny = Math.ceil(H / 2 / (1080 * s) + 0.5);
+    for (let ty = -ny; ty <= ny; ty++) for (let tx = -nx; tx <= nx; tx++) tiles.push([tx, ty]);
+  }
+  return /* @__PURE__ */ jsxs("div", { style: { position: "absolute", left: 0, top: 0, width: W, height: H, overflow: "hidden", background: scene.background }, children: [
+    scene.backImage ? /* @__PURE__ */ jsx(Img2, { src: scene.backImage, style: { position: "absolute", left: 0, top: 0, width: W, height: H, objectFit: "cover" } }) : null,
+    /* @__PURE__ */ jsx("div", { style: { position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${W / 2 + x}px, ${H / 2 + y}px) scale(${s})` }, children: tiles.map(([tx, ty]) => /* @__PURE__ */ jsx(Img2, { src: url("paper.jpg"), style: { position: "absolute", left: tx * 1920 - 960, top: ty * 1080 - 540, width: 1920, height: 1080 } }, `${tx},${ty}`)) }),
+    /* @__PURE__ */ jsxs("svg", { width: W, height: H, viewBox: `${-W / 2} ${-H / 2} ${W} ${H}`, style: { position: "absolute", left: 0, top: 0 }, children: [
       defs(h),
       scene.el(h)
     ] })
@@ -645,6 +653,16 @@ function parse(source) {
         if (!t[1] || t[1].kind !== "word") throw new Error('a beat needs its ID, like: beat S1-B2 "the narration"');
         const text2 = t.filter((x) => x.kind === "str").map((x) => x.text).join(" ");
         out.items.push({ kind: "beat", beat: { n: n2, id: t[1].text, text: text2 } });
+        continue;
+      }
+      if (head === "page") {
+        const t = tokenize(s);
+        const opts = {};
+        for (const x of t.slice(1)) {
+          if (x.kind === "kv") opts[x.key] = x.text;
+          else if (x.kind === "word") opts.size = x.text;
+        }
+        out.items.push({ kind: "page", n: n2, opts });
         continue;
       }
       if (head === "let") {
@@ -2823,6 +2841,21 @@ function clocks(beats, timings) {
 }
 
 // src/mic/build.ts
+var PAGE_SIZES = {
+  wide: [1920, 1080],
+  youtube: [1920, 1080],
+  "16:9": [1920, 1080],
+  short: [1080, 1920],
+  reel: [1080, 1920],
+  tiktok: [1080, 1920],
+  vertical: [1080, 1920],
+  "9:16": [1080, 1920],
+  square: [1080, 1080],
+  "1:1": [1080, 1080],
+  portrait: [1080, 1350],
+  "4:5": [1080, 1350],
+  "4:3": [1440, 1080]
+};
 var D = (c, dflt) => c.line.opts.in !== void 0 ? dur(c.line.opts.in) : c.line.opts.for !== void 0 ? dur(c.line.opts.for) : dflt;
 var E = (c, dflt) => ease(c.line.opts.ease, dflt);
 var each = (c, f2) => {
@@ -3450,8 +3483,44 @@ function buildMic(source, timings, o = {}) {
     if (how === "draw" || how === "write") return VERBS[how].run(fake);
     return appear(ob, how, fake)(s);
   };
+  const page = { w: 1920, h: 1080, background: P.paper, paper: true };
   for (const it of parsed.items) {
     try {
+      if (it.kind === "page") {
+        const o2 = it.opts;
+        if (o2.size) {
+          const k = o2.size.toLowerCase();
+          const m = /^(\d{3,4})\s*[x×]\s*(\d{3,4})$/.exec(k);
+          if (PAGE_SIZES[k]) [page.w, page.h] = PAGE_SIZES[k];
+          else if (m) {
+            page.w = +m[1];
+            page.h = +m[2];
+            if (page.w > 3840 || page.h > 3840 || page.w < 240 || page.h < 240) throw new Error("page size: between 240 and 3840 on each side");
+          } else throw new Error(`page size: use ${Object.keys(PAGE_SIZES).join(", ")}, or WIDTHxHEIGHT like 1080x1920`);
+          if (page.w % 2 || page.h % 2) throw new Error("page size: use even numbers (video needs them)");
+        }
+        const bg = (o2.background ?? o2.bg ?? "").trim();
+        if (bg) {
+          const k = bg.toLowerCase();
+          if (k === "paper") {
+            page.paper = true;
+            page.background = P.paper;
+            page.backImage = void 0;
+          } else if (k === "plain") {
+            page.paper = false;
+            page.background = P.paper;
+            page.backImage = void 0;
+          } else if (images[bg]) {
+            page.backImage = images[bg].data;
+            page.paper = false;
+          } else {
+            page.background = color(k === "green" || k === "greenscreen" || k === "chroma" ? "#00B140" : bg);
+            page.paper = false;
+            page.backImage = void 0;
+          }
+        }
+        continue;
+      }
       if (it.kind === "beat") {
         beat = clockOf.get(it.beat.id);
         prevEnd = Math.max(prevEnd, beat.start);
@@ -3479,7 +3548,11 @@ function buildMic(source, timings, o = {}) {
       return g(h2, {}, cam.g(h2, ...r.filter((x) => !x.fixed).map((ob) => drawObj(h2, ob))), ...r.filter((x) => x.fixed).map((ob) => drawObj(h2, ob)));
     },
     camera: cam,
-    background: P.paper,
+    background: page.background,
+    width: page.w,
+    height: page.h,
+    paper: page.paper,
+    backImage: page.backImage,
     late: lines.filter((x) => x.late).map((x) => [`line ${x.line}`, x.late]),
     lastTween: getLastEnd()
   };
@@ -3496,6 +3569,7 @@ function buildMic(source, timings, o = {}) {
     return out.sort((a, c) => c.box().w * c.box().h - a.box().w * a.box().h).reverse();
   };
   return {
+    page,
     scene,
     beats,
     errors: errors.sort((a, c) => a.line - c.line),
@@ -3533,14 +3607,13 @@ function films(files, timings, library) {
 
 // src/mic/remotion-root.tsx
 import { Fragment, jsx as jsx3 } from "react/jsx-runtime";
-IMAGES.length = 0;
 var FPS = 30;
 function makeRoot(input) {
   const all2 = films(input.files, input.timings, input.library);
   for (const f2 of all2) for (const e of f2.result.errors) console.error(`${f2.file} line ${e.line}: ${e.msg}`);
   const byId = new Map(all2.flatMap((f2) => f2.beats.map((b) => [b.id, b.scene])));
   const Comp = ({ id }) => /* @__PURE__ */ jsx3(SequenceView, { scenes: [byId.get(id)] });
-  return () => /* @__PURE__ */ jsx3(Fragment, { children: [...byId.entries()].map(([id, sc]) => /* @__PURE__ */ jsx3(Composition, { id, component: Comp, defaultProps: { id }, durationInFrames: framesOf(sc, FPS), fps: FPS, width: 1920, height: 1080 }, id)) });
+  return () => /* @__PURE__ */ jsx3(Fragment, { children: [...byId.entries()].map(([id, sc]) => /* @__PURE__ */ jsx3(Composition, { id, component: Comp, defaultProps: { id }, durationInFrames: framesOf(sc, FPS), fps: FPS, width: sc.width ?? 1920, height: sc.height ?? 1080 }, id)) });
 }
 export {
   FPS,

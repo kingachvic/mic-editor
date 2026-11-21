@@ -34,7 +34,7 @@
   .hl { overflow: hidden; pointer-events: none; }
   .hl > div { min-height: 20px; margin: 0 -10px; padding: 0 10px; width: max-content; min-width: calc(100% + 20px); }
   .editarea textarea { width: 100%; height: 100%; border: 0; outline: 0; resize: none; background: transparent; color: transparent; overflow: auto; -webkit-text-fill-color: transparent; }
-  .editarea textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; }
+  .editarea textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; color: transparent; }
   .sugg { position: absolute; z-index: 5; min-width: 220px; max-width: 460px; border-radius: 6px; padding: 3px 0; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; box-shadow: 0 6px 18px #0004; }
   .sugg.dark { background: #252526; color: #CCCCCC; border: 1px solid #454545; } .sugg.light { background: #F3F3F3; color: #1F1F1F; border: 1px solid #C8C8C8; }
   .si { padding: 4px 10px; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; cursor: pointer; }
@@ -75,7 +75,7 @@
   .themebtn { margin-left: 6px; font-size: 13px; padding: 4px 10px; }
   .msg { font-size: 13px; padding: 6px 4px; min-height: 30px; color: var(--muted); }
   .msg.bad { color: var(--red); } .msg.warnmsg { color: var(--warn); }
-  .stage { position: relative; width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .stage { position: relative; width: 100%; overflow: hidden; border-radius: 8px; background: transparent; }
   .transport { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
   .transport select { font: inherit; padding: 5px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
   .time { font-variant-numeric: tabular-nums; min-width: 96px; }

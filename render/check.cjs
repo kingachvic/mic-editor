@@ -548,6 +548,16 @@ function parse(source) {
         out.items.push({ kind: "beat", beat: { n: n2, id: t[1].text, text: text2 } });
         continue;
       }
+      if (head === "page") {
+        const t = tokenize(s);
+        const opts = {};
+        for (const x of t.slice(1)) {
+          if (x.kind === "kv") opts[x.key] = x.text;
+          else if (x.kind === "word") opts.size = x.text;
+        }
+        out.items.push({ kind: "page", n: n2, opts });
+        continue;
+      }
       if (head === "let") {
         const m = /^let\s+([A-Za-z_][\w]*)\s*=\s*(.+)$/.exec(s.replace(/\s+#.*$/, ""));
         if (!m) throw new Error("write it like: let rest = -70");
@@ -2724,6 +2734,21 @@ function clocks(beats, timings2) {
 }
 
 // src/mic/build.ts
+var PAGE_SIZES = {
+  wide: [1920, 1080],
+  youtube: [1920, 1080],
+  "16:9": [1920, 1080],
+  short: [1080, 1920],
+  reel: [1080, 1920],
+  tiktok: [1080, 1920],
+  vertical: [1080, 1920],
+  "9:16": [1080, 1920],
+  square: [1080, 1080],
+  "1:1": [1080, 1080],
+  portrait: [1080, 1350],
+  "4:5": [1080, 1350],
+  "4:3": [1440, 1080]
+};
 var D = (c, dflt) => c.line.opts.in !== void 0 ? dur(c.line.opts.in) : c.line.opts.for !== void 0 ? dur(c.line.opts.for) : dflt;
 var E = (c, dflt) => ease(c.line.opts.ease, dflt);
 var each = (c, f2) => {
@@ -3351,8 +3376,44 @@ function buildMic(source, timings2, o = {}) {
     if (how === "draw" || how === "write") return VERBS[how].run(fake);
     return appear(ob, how, fake)(s);
   };
+  const page = { w: 1920, h: 1080, background: P.paper, paper: true };
   for (const it of parsed.items) {
     try {
+      if (it.kind === "page") {
+        const o2 = it.opts;
+        if (o2.size) {
+          const k = o2.size.toLowerCase();
+          const m = /^(\d{3,4})\s*[x×]\s*(\d{3,4})$/.exec(k);
+          if (PAGE_SIZES[k]) [page.w, page.h] = PAGE_SIZES[k];
+          else if (m) {
+            page.w = +m[1];
+            page.h = +m[2];
+            if (page.w > 3840 || page.h > 3840 || page.w < 240 || page.h < 240) throw new Error("page size: between 240 and 3840 on each side");
+          } else throw new Error(`page size: use ${Object.keys(PAGE_SIZES).join(", ")}, or WIDTHxHEIGHT like 1080x1920`);
+          if (page.w % 2 || page.h % 2) throw new Error("page size: use even numbers (video needs them)");
+        }
+        const bg = (o2.background ?? o2.bg ?? "").trim();
+        if (bg) {
+          const k = bg.toLowerCase();
+          if (k === "paper") {
+            page.paper = true;
+            page.background = P.paper;
+            page.backImage = void 0;
+          } else if (k === "plain") {
+            page.paper = false;
+            page.background = P.paper;
+            page.backImage = void 0;
+          } else if (images[bg]) {
+            page.backImage = images[bg].data;
+            page.paper = false;
+          } else {
+            page.background = color(k === "green" || k === "greenscreen" || k === "chroma" ? "#00B140" : bg);
+            page.paper = false;
+            page.backImage = void 0;
+          }
+        }
+        continue;
+      }
       if (it.kind === "beat") {
         beat = clockOf.get(it.beat.id);
         prevEnd = Math.max(prevEnd, beat.start);
@@ -3380,7 +3441,11 @@ function buildMic(source, timings2, o = {}) {
       return g(h, {}, cam.g(h, ...r.filter((x) => !x.fixed).map((ob) => drawObj(h, ob))), ...r.filter((x) => x.fixed).map((ob) => drawObj(h, ob)));
     },
     camera: cam,
-    background: P.paper,
+    background: page.background,
+    width: page.w,
+    height: page.h,
+    paper: page.paper,
+    backImage: page.backImage,
     late: lines.filter((x) => x.late).map((x) => [`line ${x.line}`, x.late]),
     lastTween: getLastEnd()
   };
@@ -3397,6 +3462,7 @@ function buildMic(source, timings2, o = {}) {
     return out.sort((a, c) => c.box().w * c.box().h - a.box().w * a.box().h).reverse();
   };
   return {
+    page,
     scene,
     beats,
     errors: errors.sort((a, c) => a.line - c.line),
